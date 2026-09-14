@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TPM Backlog &amp; Technical Proposal Generator</title>
+    <meta name="description" content="Transforms wireframes, screenshots, and meeting notes into validated executive proposals, agile technical backlogs, conflict alerts, and effort estimations." />
+    <meta property="og:title" content="TPM Backlog &amp; Technical Proposal Generator" />
+    <meta property="og:description" content="Transforms wireframes, screenshots, and meeting notes into validated executive proposals, agile technical backlogs, conflict alerts, and effort estimations." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        try {
+          if (typeof window !== 'undefined') {
+            var nativeFetch = window.fetch ? window.fetch.bind(window) : undefined;
+            var currentFetch = nativeFetch;
+
+            // 1. Ensure Window.prototype has a setter if fetch has only a getter
+            if (typeof Window !== 'undefined' && Window.prototype) {
+              var protoDesc = Object.getOwnPropertyDescriptor(Window.prototype, 'fetch');
+              if (protoDesc && protoDesc.get && !protoDesc.set) {
+                Object.defineProperty(Window.prototype, 'fetch', {
+                  configurable: true,
+                  enumerable: true,
+                  get: function() {
+                    return currentFetch || (protoDesc.get ? protoDesc.get.call(this) : undefined);
+                  },
+                  set: function(fn) {
+                    currentFetch = fn;
+                    try {
+                      Object.defineProperty(this, 'fetch', {
+                        value: fn,
+                        writable: true,
+                        configurable: true,
+                        enumerable: true
+                      });
+                    } catch (_) {}
+                  }
+                });
+              }
+            }
+
+            // 2. Define writable/configurable fetch directly on window
+            var winDesc = Object.getOwnPropertyDescriptor(window, 'fetch');
+            if (!winDesc || !winDesc.set || !winDesc.writable) {
+              Object.defineProperty(window, 'fetch', {
+                configurable: true,
+                enumerable: true,
+                get: function() {
+                  return currentFetch;
+                },
+                set: function(fn) {
+                  currentFetch = fn;
+                }
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Fetch setter safeguard error:', e);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

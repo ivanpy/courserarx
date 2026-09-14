@@ -1,0 +1,7 @@
+{
+  "name": "TPM Backlog & Technical Proposal Generator",
+  "description": "Transforms wireframes, screenshots, and meeting notes into validated executive proposals, agile technical backlogs, conflict alerts, and effort estimations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
