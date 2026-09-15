@@ -522,14 +522,26 @@ Esquema relacional PostgreSQL con UUID, especificado en [`.claude/rules/database
 ```
 proyectos ──┬── proyecto_adjuntos
             └── propuestas ──┬── hitos ── tareas
+                             ├── propuesta_tarifas_aplicadas   ← foto histórica
                              ├── alertas_conflictos
                              ├── extras_opcionales
                              └── sugerencias_proactivas
+
+tarifas                      ← catálogo rol × seniority × moneda, versionado
+roles_seniority_default      ← seniority por defecto de cada rol
 ```
 
 La escritura de una propuesta y toda su descendencia ocurre en **una sola transacción**: una propuesta parcialmente persistida corrompería los totales del panel ejecutivo. `propuestas.metadata_json` conserva modelo utilizado, intentos de fallback, latencia, correcciones de invariantes aplicadas y `riesgo_injection`.
 
-El DDL literal vive en `db/0001_init.sql`, y `db/0002_seed_config.sql` carga la versión inicial del prompt maestro y el catálogo de modelos — de modo que el prompt pase a ser dato versionado en servidor y no una constante en el bundle.
+### 11.1 Tarifas por rol y seniority
+
+Las tarifas se definen por **rol × seniority (Junior/Semi/Senior) × moneda (USD/ARS)**, con período de vigencia. Cada tarea hereda un seniority por defecto según su rol y el TPM lo corrige cuando hace falta; `tareas.seniority_origen` distingue el valor heredado del corregido a mano, para no pisar decisiones deliberadas al regenerar una propuesta.
+
+**El motor de IA no interviene:** no emite `seniority`, lo asigna el servidor al persistir. El contrato de datos de §6, el `responseSchema` y la system instruction quedan intactos.
+
+La pieza crítica es `propuesta_tarifas_aplicadas`: el presupuesto se calcula **siempre** contra esa foto, nunca por JOIN contra `tarifas`. Sin esa separación, editar una tarifa reescribiría en silencio el presupuesto de todas las propuestas ya presentadas al cliente — la misma clase de fallo que la fórmula de sprint duplicada de §4.4. El `tipo_cambio_usd_ars` de la propuesta se congela junto con su fecha por el mismo motivo.
+
+El DDL literal vive en `db/0001_init.sql`, y `db/0002_seed_config.sql` carga la versión inicial del prompt maestro, el catálogo de modelos y las tarifas semilla — de modo que el prompt pase a ser dato versionado en servidor y no una constante en el bundle.
 
 ---
 
@@ -584,7 +596,7 @@ Fuente única: `lib/domain/constants.ts`. ⚠️ Estos valores **difieren del c�
 
 | Parámetro | Valor |
 |---|---|
-| Tarifa | `$35 USD/h` (configurable) |
+| Tarifa | `$35 USD/h` para Fullstack Semi — referencia del catálogo de §11.1, configurable por rol y seniority |
 | Capacidad semanal | `40 h` (1 FTE) |
 | Sprint | 2 semanas = `80 h` |
 | Cronograma | Fecha por hito = `startDate` + (horas acumuladas previas ÷ capacidad semanal) |
@@ -607,7 +619,7 @@ Generada **en servidor** por `lib/export/xlsx.ts` con `write-excel-file/node` y 
 | **3 — Resiliencia** | RES-01…10: clasificación de errores, backoff, `AbortController`, circuit breaker, telemetría. | D-06, D-07, D-10 | Una clave inválida produce 1 intento, no 7; JSON truncado no devuelve 500 |
 | **4 — Dominio unificado** | `lib/domain/*`: colapsar los 5 `reduce`, las 3 agregaciones por rol, los 2 slugs; decidir la fórmula de sprint. | — | `calcularMetricas` reproduce los números del panel ejecutivo |
 | **5 — Route groups y auth** | `middleware.ts`, `lib/auth/*`, `assertAdmin()`, regla ESLint de frontera. | D-13 | Ningún componente admin es alcanzable desde `(stakeholder)` |
-| **6 — Persistencia** | `db/0001_init.sql`, `lib/db/*`, Server Actions de escritura. | — | Una propuesta se guarda y recupera íntegra (8 tablas, CASCADE) |
+| **6 — Persistencia** | `db/0001_init.sql`, `lib/db/*`, Server Actions de escritura. | — | Una propuesta se guarda y recupera íntegra (11 tablas, CASCADE); editar una tarifa no altera propuestas ya guardadas |
 | **7 — UI Admin** | `(admin)/tpm/**`. `PromptEditor` y `ModelProfileSelector` sobre Server Actions. | — | Flujo completo sin `/api/analyze` legacy |
 | **8 — UI Stakeholder** | `(stakeholder)/p/[id]`, Server Components puros. | — | JS de negocio ≈ 0 en la vista cliente |
 | **9 — Exportaciones** | `lib/export/*` + `/api/export/[id]/[formato]`. | — | XLSX/CSV/Jira/MD idénticos, generados en servidor |

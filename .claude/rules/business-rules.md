@@ -8,7 +8,7 @@ Para la lógica de cálculo en la UI y el benchmark de validación:
 # Reglas de Negocio, UX y Benchmark de Pruebas
 
 ## 1. Cálculos de la UI (Panel Ejecutivo)
-- **Tarifa por defecto:** `$35 USD/h` (configurable).
+- **Tarifa:** definida por **rol × seniority (Junior/Semi/Senior) × moneda (USD/ARS)** en la tabla `tarifas` (ver `database-schema.md`). La referencia de `$35 USD/h` corresponde al perfil **Fullstack Semi**; el resto se configura desde el panel Admin/TPM.
 - **Capacidad semanal:** `40 horas` (1 FTE).
 - **Sprints:** Ciclos de 2 semanas (`teamCapacityWeekly * 2 = 80h`).
 - **Cronograma incremental:** Calcular fecha estimada de cada hito sumando el acumulado de horas de los hitos previos dividido por la capacidad semanal a partir de `startDate`.
