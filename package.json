@@ -4,12 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "tsx --conditions=react-server server.ts",
     "dev:next": "next dev -p 3001",
     "build": "next build",
     "build:legacy": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "next start",
-    "start:legacy": "node dist/server.cjs",
+    "start:legacy": "node --conditions=react-server dist/server.cjs",
     "clean": "rm -rf dist .next server.js",
     "lint": "tsc --noEmit"
   },
@@ -24,6 +24,7 @@
     "next": "^16.3.5",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "server-only": "^0.0.1",
     "vite": "^6.2.3",
     "write-excel-file": "^4.1.1",
     "zod": "^4.6.5"

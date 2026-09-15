@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * E4 del pipeline — ensambla las partes multimodales para @google/genai.
  * Puerto de server.ts:65-179, reescrito para pasar el contenido no confiable

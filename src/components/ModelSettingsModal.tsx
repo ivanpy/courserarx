@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Settings2, Sliders, Cpu } from 'lucide-react';
+import { ModeloPublico } from '../types';
 
 interface ModelSettingsModalProps {
   isOpen: boolean;
@@ -8,15 +9,25 @@ interface ModelSettingsModalProps {
   setModel: (val: string) => void;
   temperature: number;
   setTemperature: (val: number) => void;
+  modelos: ModeloPublico[];
 }
 
+// Fase 2 (cierra D-02, D-03): el <select> ya no lista modelos hardcodeados
+// que el servidor podía o no aceptar — se llena con el DTO ModeloPublico
+// (§4.1, §4.2) que expone /api/modelos, la misma allowlist que valida
+// contracts.ts. El bloque "Top K: 40 / Top P: 0.95" desapareció: son
+// constantes de servidor sin representación en el cliente. El slider de
+// temperature baja su tope de 1.0 a 0.4 para que coincida con el clamp real
+// del servidor — antes se podía arrastrar hasta 1.0 aunque el valor
+// terminara acotado silenciosamente.
 export const ModelSettingsModal: React.FC<ModelSettingsModalProps> = ({
   isOpen,
   onClose,
   model,
   setModel,
   temperature,
-  setTemperature
+  setTemperature,
+  modelos
 }) => {
   if (!isOpen) return null;
 
@@ -31,7 +42,7 @@ export const ModelSettingsModal: React.FC<ModelSettingsModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm sm:text-base font-bold text-slate-900">
-                3. Configuración del Modelo
+                Configuración del Modelo
               </h3>
               <p className="text-xs text-slate-500">
                 Parámetros recomendados para máxima precisión
@@ -58,13 +69,15 @@ export const ModelSettingsModal: React.FC<ModelSettingsModalProps> = ({
             <select
               value={model}
               onChange={e => setModel(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 cursor-pointer"
+              disabled={modelos.length === 0}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 cursor-pointer disabled:opacity-50"
             >
-              <option value="gemini-3.5-flash">Gemini 3.5 Flash (Recomendado / Máxima disponibilidad y velocidad)</option>
-              <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Ultra rápido / Baja latencia)</option>
-              <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Eficiente)</option>
-              <option value="gemini-3.8-flash">Gemini 3.8 Flash (Sujeto a cuota y alta demanda)</option>
-              <option value="gemini-flash-latest">Gemini Flash Latest</option>
+              {modelos.length === 0 && <option value={model}>Cargando catálogo del servidor…</option>}
+              {modelos.map(m => (
+                <option key={m.id} value={m.id} disabled={!m.disponible}>
+                  {m.etiqueta}
+                </option>
+              ))}
             </select>
             <p className="text-[11px] text-slate-500 mt-1">
               Capacidad multimodal optimizada para analizar wireframes, diagramas y mockups con tolerancia a fallos.
@@ -85,7 +98,7 @@ export const ModelSettingsModal: React.FC<ModelSettingsModalProps> = ({
             <input
               type="range"
               min="0"
-              max="1"
+              max="0.4"
               step="0.05"
               value={temperature}
               onChange={e => setTemperature(parseFloat(e.target.value))}
@@ -93,21 +106,11 @@ export const ModelSettingsModal: React.FC<ModelSettingsModalProps> = ({
             />
             <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
               <span>0.0 (Determinístico / Sin alucinaciones)</span>
-              <span>1.0 (Creativo)</span>
+              <span>0.4 (Máximo permitido)</span>
             </div>
             <p className="text-[11px] text-slate-500 mt-2 bg-slate-50 p-2 rounded-lg border border-slate-100">
-              Una temperatura baja (0.1) asegura que la estimación de horas y la detección de discrepancias sea estricta, evitando tareas inventadas.
+              Una temperatura baja (0.1) asegura que la estimación de horas y la detección de discrepancias sea estricta, evitando tareas inventadas. El servidor acota este valor a un máximo de 0.4.
             </p>
-          </div>
-
-          {/* Top K & Top P Info */}
-          <div className="text-xs text-slate-600 bg-blue-50/50 p-3 rounded-xl border border-blue-100 space-y-1">
-            <div className="font-semibold text-blue-900">Parámetros de Inferencia del Backend:</div>
-            <div className="flex items-center justify-between font-mono text-[11px]">
-              <span>Top K: 40</span>
-              <span>Top P: 0.95</span>
-              <span>Output: application/json</span>
-            </div>
           </div>
         </div>
 

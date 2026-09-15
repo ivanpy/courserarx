@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * E6 del pipeline — parseo defensivo de la respuesta del modelo (puerto de
  * server.ts:320-332) y recómputo del total de horas (puerto de

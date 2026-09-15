@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * E5 del pipeline — SDK con fallback y clasificación de errores (§8).
  * Puerto de server.ts:56-63 y :181-318, preservando el comportamiento actual

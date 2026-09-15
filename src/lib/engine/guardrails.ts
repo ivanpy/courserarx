@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * E3 del pipeline (README §5.1) — vallado anti-injection y encuadre de
  * fuentes (Master Truth). Nuevo en la Fase 1: server.ts:149-155 interpolaba

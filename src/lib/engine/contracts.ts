@@ -1,17 +1,23 @@
+import 'server-only';
+
 /**
  * MotorInput / MotorOutput / MotorErrorPublico — el contrato del motor.
  *
- * `MotorInputSchema` es el contrato de HOY, no el de VAL-01 final (README
- * §9): sigue aceptando `systemInstructions`, `model` y `temperature` sin
- * acotar desde el cliente porque D-01, D-02 y D-03 siguen abiertos a
- * propósito. Cerrarlos — reemplazar esos tres campos por `promptProfileId` +
- * `modeloId` (enum) — es la Fase 2, y depende de infraestructura que todavía
- * no existe (sesión de Admin, tabla `proyectos`). Lo que sí se adelanta aquí
- * es el principio de VAL-01: la validación vive DENTRO del motor, no en el
- * Route Handler ni en el adaptador Express, y las claves desconocidas se
- * rechazan (`.strict()`) en vez de ignorarse.
+ * Fase 2 (VAL-01/02/03, cierra D-01, D-02, D-03): `systemInstructions`
+ * desaparece del schema — el cliente ya no puede enviarla, ni para
+ * overridearla ni de ningún otro modo (`.strict()` rechaza la clave si
+ * llega). `model` pasa de string libre a un enum cerrado
+ * (`MODELOS_PERMITIDOS`). `temperature` se acota a `[0, 0.4]`.
+ *
+ * Todavía no es el `MotorInput` final de VAL-01: no hay `promptProfileId`
+ * (implicaría resolver el prompt por proyecto desde DB, Fase 6) ni sesión de
+ * Admin que lo autorice (Fase 5). Lo que sí queda cerrado ya, sin depender de
+ * esa infraestructura, es que ningún caller puede alterar Master Truth ni
+ * Scope Isolation: el único texto de sistema posible es el literal de
+ * `system-instruction.ts`.
  */
 import {z} from 'zod';
+import {MODELOS_PERMITIDOS, MODELO_DEFAULT} from './models';
 
 export const MotorInputSchema = z
   .object({
@@ -32,9 +38,8 @@ export const MotorInputSchema = z
       )
       .optional()
       .default([]),
-    systemInstructions: z.string().optional(),
-    temperature: z.number().optional(),
-    model: z.string().optional(),
+    temperature: z.number().min(0).max(0.4).optional(),
+    model: z.enum(MODELOS_PERMITIDOS).optional().default(MODELO_DEFAULT),
   })
   .strict();
 

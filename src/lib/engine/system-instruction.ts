@@ -1,13 +1,18 @@
+import 'server-only';
+
 /**
  * E4 del pipeline — resuelve la instrucción de sistema efectiva.
  *
- * Fase 1: paridad con server.ts:161-171. El cliente todavía puede enviar
- * `systemInstructions` y pisar el default — D-01 sigue ABIERTO a propósito.
- * Cerrarlo es la Fase 2 (VAL-02): el cliente pasa a enviar un
- * `promptProfileId` y este módulo resuelve el texto desde
- * `proyectos.system_instructions` en DB, previa comprobación de sesión Admin.
- * Esa infraestructura (DB, sesión) todavía no existe, así que no se puede
- * adelantar sin construir sobre una frontera a medio cerrar.
+ * Fase 2 (VAL-02, cierra D-01 y D-12): ya no acepta override del caller.
+ * server.ts:161 original hacía `systemInstructions || DEFAULT...` — cualquier
+ * cliente podía reemplazar íntegramente Master Truth y Scope Isolation. Ahora
+ * el único texto posible es este literal.
+ *
+ * Todavía no es la versión final de VAL-02 (resolver por `promptProfileId`
+ * desde `proyectos.system_instructions` en DB, previa sesión Admin, para que
+ * el TPM pueda tener perfiles distintos por proyecto) — esa depende de DB
+ * (Fase 6) y auth (Fase 5). Lo que se cierra ya, sin esa infraestructura, es
+ * la vulnerabilidad en sí: nadie externo puede alterar estas reglas.
  */
 const DEFAULT_SYSTEM_INSTRUCTION = `Actúa como un Senior Technical Product Manager y Arquitecto de Software Fullstack experto en metodologías Ágiles. Tu misión es transformar requerimientos caóticos (imágenes y notas) en una propuesta profesional y un backlog técnico.
 
@@ -21,12 +26,6 @@ REGLAS DE PROCESAMIENTO:
 
 FORMATO DE SALIDA (JSON PURO): Responde exclusivamente con la estructura solicitada.`;
 
-/**
- * Igual que server.ts:161 (`systemInstructions || DEFAULT...`): un string
- * vacío o solo espacios sigue contando como "sin override" únicamente si es
- * falsy — no se agrega un `.trim()` que server.ts nunca tuvo, para no
- * introducir una diferencia de comportamiento fuera del alcance de esta fase.
- */
-export function resolverSystemInstruction(systemInstructionsDelCliente?: string): string {
-  return systemInstructionsDelCliente || DEFAULT_SYSTEM_INSTRUCTION;
+export function resolverSystemInstruction(): string {
+  return DEFAULT_SYSTEM_INSTRUCTION;
 }

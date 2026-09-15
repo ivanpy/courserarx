@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { ProjectInputForm } from './components/ProjectInputForm';
 import { ProposalDashboard } from './components/ProposalDashboard';
@@ -7,12 +7,9 @@ import { ModelSettingsModal } from './components/ModelSettingsModal';
 import { ImagePreviewModal } from './components/ImagePreviewModal';
 import { ErrorReviewModal } from './components/ErrorReviewModal';
 import { WelcomeModal } from './components/WelcomeModal';
-import { ProposalResult, UploadedImage, ReviewableError } from './types';
+import { ProposalResult, UploadedImage, ReviewableError, ModeloPublico } from './types';
 import { downloadJsonFile, exportHitosCsv, exportHitosXlsx } from './utils/helpers';
-import {
-  DEFAULT_SYSTEM_INSTRUCTIONS,
-  TURNERO_SAMPLE_DATA
-} from './data/defaults';
+import { TURNERO_SAMPLE_DATA } from './data/defaults';
 import {
   Sparkles,
   ShieldCheck,
@@ -50,12 +47,32 @@ export default function App() {
     return localStorage.getItem('backlog_ia_welcome_seen') !== 'true';
   });
 
-  // Model & System instructions state
-  const [systemInstructions, setSystemInstructions] = useState<string>(
-    DEFAULT_SYSTEM_INSTRUCTIONS
-  );
+  // Model settings state. El prompt del sistema ya no es estado de cliente
+  // (Fase 2, cierra D-01/D-12): el servidor lo resuelve internamente y no
+  // acepta override. `modelos` llega del DTO ModeloPublico (/api/modelos),
+  // única fuente de verdad sobre qué modelos son seleccionables.
   const [model, setModel] = useState<string>('gemini-3.5-flash');
   const [temperature, setTemperature] = useState<number>(0.1);
+  const [modelos, setModelos] = useState<ModeloPublico[]>([]);
+
+  useEffect(() => {
+    let cancelado = false;
+    fetch('/api/modelos')
+      .then(res => res.json())
+      .then(data => {
+        if (!cancelado && Array.isArray(data.modelos)) {
+          setModelos(data.modelos);
+        }
+      })
+      .catch(() => {
+        // Sin catálogo no se bloquea la app: el <select> queda deshabilitado
+        // y el modelo por defecto ('gemini-3.5-flash') sigue siendo válido
+        // contra el allowlist del servidor.
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   // Load Turnero Benchmark Sample with automatic resolution
   const handleLoadTurneroSample = () => {
@@ -111,41 +128,25 @@ export default function App() {
         base64Data: img.dataUrl
       }));
 
-      const executeRequest = async (targetModel: string) => {
-        return fetch('/api/analyze', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            projectName: projectName.trim() || 'Proyecto de Software',
-            notes: notes.trim(),
-            images: preparedImages,
-            systemInstructions,
-            temperature,
-            model: targetModel
-          })
-        });
-      };
-
-      let res = await executeRequest(model);
-      let data = await res.json().catch(() => ({ error: 'Respuesta inválida del servidor.' }));
-
-      // Check if this is the known rate-limit / high-demand issue ("los mismos errores")
-      if (!res.ok && (data.isRateLimitOrDemand || res.status === 429 || res.status === 503)) {
-        // Automatic resolution: switch to verified high-availability model (gemini-3.5-flash) and retry once automatically
-        if (model !== 'gemini-3.5-flash') {
-          console.log(`[Auto-Resolve] Error de cuota/demanda en ${model}. Reintentando automáticamente con gemini-3.5-flash...`);
-          setModel('gemini-3.5-flash');
-          res = await executeRequest('gemini-3.5-flash');
-          data = await res.json().catch(() => ({ error: 'Respuesta inválida en reintento.' }));
-          if (res.ok) {
-            setAutoResolvedNotice(
-              'Se resolvió automáticamente: Debido a la alta demanda temporal en el modelo anterior, la propuesta se generó exitosamente utilizando Gemini 3.5 Flash.'
-            );
-          }
-        }
-      }
+      // Fase 2 (cierra D-08): ya no hay cascada de reintento con otro modelo
+      // acá. El servidor ya agota su propia cascada de fallback en una sola
+      // petición (src/lib/engine/inference.ts) — reintentar en el navegador
+      // con el primer modelo de esa misma cascada era resiliencia duplicada
+      // ejecutándose en zona no confiable, y ya redundante en la práctica.
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          projectName: projectName.trim() || 'Proyecto de Software',
+          notes: notes.trim(),
+          images: preparedImages,
+          temperature,
+          model
+        })
+      });
+      const data = await res.json().catch(() => ({ error: 'Respuesta inválida del servidor.' }));
 
       if (!res.ok) {
         // "si es otro error dejame revisarlo"
@@ -522,12 +523,10 @@ export default function App() {
         onLoadSample={handleLoadTurneroSample}
       />
 
-      {/* System Instructions Modal */}
+      {/* System Instructions Modal (solo lectura desde la Fase 2) */}
       <SystemInstructionsModal
         isOpen={isInstructionsOpen}
         onClose={() => setIsInstructionsOpen(false)}
-        systemInstructions={systemInstructions}
-        setSystemInstructions={setSystemInstructions}
       />
 
       {/* Model Settings Modal */}
@@ -538,6 +537,7 @@ export default function App() {
         setModel={setModel}
         temperature={temperature}
         setTemperature={setTemperature}
+        modelos={modelos}
       />
 
       {/* Full-size Image Preview Modal */}

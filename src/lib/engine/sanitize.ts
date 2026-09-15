@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * E2 del pipeline (README §5.1) — limpieza de base64, verificación de MIME
  * real y saneamiento del XML de un SVG antes de que cualquiera de los dos

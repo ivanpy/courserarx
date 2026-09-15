@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { ejecutarMotor, MotorError } from "@/lib/engine";
+import { obtenerCatalogoPublico } from "@/lib/engine/models";
 
 // `quiet` silencia el "tip" promocional aleatorio que dotenv v17 imprime en
 // cada arranque (node_modules/dotenv/lib/main.js) — no afecta la carga de
@@ -23,6 +24,14 @@ async function startServer() {
       status: "ok",
       timestamp: new Date().toISOString()
     });
+  });
+
+  // DTO ModeloPublico (§4.1, §4.2 Nivel 1, Fase 2): lo único sobre modelos
+  // que cruza al cliente. Reemplaza el <select> hardcodeado del navegador
+  // por una única fuente de verdad server-side; topK/topP/temperature no
+  // tienen representación aquí.
+  app.get("/api/modelos", (_req, res) => {
+    res.json({ modelos: obtenerCatalogoPublico() });
   });
 
   // Adaptador fino (§12): leer entrada -> ejecutarMotor() -> serializar. Toda

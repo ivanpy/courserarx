@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * Único punto de entrada del motor (§3.2, §12): "tres puertas, una
  * implementación". Express hoy, `app/api/motor/route.ts` y —en su momento—
@@ -51,7 +53,9 @@ export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
   }
 
   const projectName = input.projectName || 'Proyecto Sin Nombre';
-  const modeloSolicitado = input.model || 'gemini-3.5-flash';
+  // `model` ya trae default del propio Zod schema (MODELO_DEFAULT) y está
+  // validado contra el enum; no hace falta un fallback manual acá.
+  const modeloSolicitado = input.model;
   const temperature = typeof input.temperature === 'number' ? input.temperature : 0.1;
 
   // E1 — normalización de adjuntos.
@@ -65,7 +69,7 @@ export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
     notes: input.notes,
     adjuntosClasificados,
   });
-  const systemInstruction = resolverSystemInstruction(input.systemInstructions);
+  const systemInstruction = resolverSystemInstruction();
 
   // E5 — inferencia con fallback.
   let resultado;

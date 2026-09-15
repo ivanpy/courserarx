@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * E1 del pipeline — normalización de adjuntos.
  *

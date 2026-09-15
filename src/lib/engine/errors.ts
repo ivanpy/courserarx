@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * Fase 1 (D-09): el servidor deja de devolver `error.stack`, el mensaje crudo
  * del SDK y la lista interna de modelos de fallback (server.ts:404-409 en el

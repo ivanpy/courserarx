@@ -1,17 +1,16 @@
 import { ProposalResult } from '../types';
 
-export const DEFAULT_SYSTEM_INSTRUCTIONS = `Actúa como un Senior Technical Product Manager y Arquitecto de Software Fullstack experto en metodologías Ágiles. Tu misión es transformar requerimientos caóticos (imágenes y notas) en una propuesta profesional y un backlog técnico.
-
-REGLAS DE PROCESAMIENTO:
-1. PRIORIDAD DE VERDAD (Master Truth): El texto proporcionado por el usuario manda sobre las imágenes. Si una imagen muestra algo que no está en el texto, considéralo 'Referencia Estética' y no lo incluyas en el presupuesto base.
-2. AISLAMIENTO DE ALCANCE: Solo asigna horas a tareas validadas por el texto. Si detectas funciones en las imágenes que NO fueron pedidas en el texto, lístalas en una sección aparte llamada 'extras_opcionales' con 0 horas.
-3. DESGLOSE TÉCNICO DETALLADO: No generes tareas genéricas. Divide cada hito en pasos técnicos ejecutables (ej: 'Crear tabla de turnos en DB', 'Validar solapamiento de horarios en Backend', 'Desarrollar selector de fechas en Frontend').
-4. DETECCIÓN DE GAPS (Modo Consultor): Identifica procesos omitidos (ej: anulaciones, confirmaciones por email, feriados) y lístalos en 'sugerencias_proactivas'.
-5. ALERTAS DE CONFLICTO: Si hay una contradicción evidente entre una imagen y las notas, lístala en 'alertas_conflictos' y no asumas una solución.
-6. ASIGNACIÓN DE ROLES: Sugiere el perfil técnico necesario (ej: Fullstack, DevOps, QA, Frontend, Backend) para cada tarea.
-
-FORMATO DE SALIDA (JSON PURO):
-Responde exclusivamente en formato JSON estructurado siguiendo el esquema solicitado.`;
+// DEFAULT_SYSTEM_INSTRUCTIONS se eliminó en la Fase 2 (cierra D-12): el
+// prompt maestro ya no viaja en el bundle del cliente. El único texto de
+// sistema posible vive ahora en src/lib/engine/system-instruction.ts
+// (server-only), y SystemInstructionsModal pasó a ser un panel de solo
+// lectura de las reglas de negocio, no un editor sobre este valor.
+//
+// TURNERO_SAMPLE_DATA (fixture de demo) sigue aquí a propósito: el mapeo del
+// README §4.3 planea moverlo a lib/fixtures/turnero.ts server-side, pero
+// ninguna deuda D-01..D-12 depende de su ubicación — no es la vulnerabilidad,
+// es contenido de ejemplo. Se relocaliza cuando el CLI benchmark (§12, Fase
+// 9/10) lo necesite como fuente compartida.
 
 export const TURNERO_SAMPLE_DATA = {
   projectName: "Sistema de Turnos Online (Turnero Monosucursal)",

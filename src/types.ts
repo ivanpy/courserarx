@@ -76,7 +76,16 @@ export interface AnalysisRequestPayload {
     mimeType: string;
     base64Data: string;
   }[];
-  systemInstructions?: string;
   temperature?: number;
   model?: string;
+}
+
+// Copia cliente-segura del DTO que expone src/lib/engine/models.ts (Fase 2,
+// §4.1/§4.2). No se importa el original: ese módulo es server-only y el
+// build fallaría si un Client Component lo alcanzara. Sin topK/topP/
+// temperature — esos son constantes/parámetros de servidor.
+export interface ModeloPublico {
+  id: string;
+  etiqueta: string;
+  disponible: boolean;
 }

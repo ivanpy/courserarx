@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * SEC-09 — versión mínima sin persistencia. La Fase 6 la reemplaza por una
  * escritura real en `propuestas.metadata_json` (RES-10). Por ahora solo
