@@ -3,14 +3,15 @@ import {ejecutarMotor, MotorError} from '@/lib/engine';
 
 // El motor usa el SDK de Node de @google/genai — no puede correr en el Edge Runtime.
 export const runtime = 'nodejs';
-// TODO(Fase 3 · RES-04): maxDuration explícito cuando exista AbortController
-// por intento + presupuesto global de la petición.
+// RES-04: margen sobre el presupuesto global de 45s que ya aplica
+// ejecutarInferencia() (inference.ts) en toda la cascada de fallback.
+export const maxDuration = 60;
 
 /**
  * Adaptador fino (§12): leer entrada → ejecutarMotor() → serializar. La
- * autorización (`assertAdmin()` / sesión) es la Fase 5 — hoy esta ruta no
- * está conectada a ninguna UI (el cliente sigue hablando con el Express
- * legacy en /api/analyze), así que no se abre superficie nueva todavía.
+ * autorización (sesión de Admin o `MOTOR_SERVICE_TOKEN`) y el rate limit
+ * se resuelven en `proxy.ts` (Fase 5, matcher '/api/motor'), no acá: este
+ * handler solo se ejecuta si esa capa ya autenticó la petición.
  */
 export async function POST(request: Request) {
   let body: unknown;

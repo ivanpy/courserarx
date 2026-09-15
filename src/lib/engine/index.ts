@@ -5,6 +5,12 @@ import 'server-only';
  * implementación". Express hoy, `app/api/motor/route.ts` y —en su momento—
  * el CLI llaman exactamente a esta función. Ninguno repite la lógica de
  * negocio ni puede esquivar la validación de E0.
+ *
+ * Fase 3: ya no parsea la respuesta del modelo ni la re-valida — eso ahora
+ * vive dentro de `ejecutarInferencia()` (RES-06). Este orquestador aplica
+ * los invariantes "blandos" (INV-01/03/05) sobre la salida ya validada, y
+ * traduce el resultado discriminado de `normalizarAdjuntos` (SEC-05) a
+ * `MotorError` cuando corresponde.
  */
 import {randomUUID} from 'crypto';
 import {ZodError} from 'zod';
@@ -15,13 +21,23 @@ import {clasificarYSanearAdjunto} from './sanitize';
 import {construirPartesPrompt} from './prompt';
 import {resolverSystemInstruction} from './system-instruction';
 import {ejecutarInferencia} from './inference';
-import {parsearRespuestaMotor, recalcularHorasTotales} from './parse';
+import {recalcularHorasTotales} from './parse';
+import {aplicarInvariantesSuaves} from './invariants';
 import {registrarEventoMotor} from './telemetry';
 
-export {MotorInputSchema, type MotorInput, type MotorOutput} from './contracts';
+export {MotorInputSchema, type MotorInput, type MotorOutput, type MotorOutputData} from './contracts';
 export {MotorError, type MotorErrorPublico} from './errors';
 
-export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
+export interface OpcionesMotor {
+  /**
+   * VAL-02 final (Fase 7): `proyectos.system_instructions` ya resuelto desde
+   * la DB por un caller autorizado (`assertAdmin()`), nunca un valor tomado
+   * del payload público. `/api/motor` no pasa esta opción.
+   */
+  systemInstructionOverride?: string | null;
+}
+
+export async function ejecutarMotor(inputCrudo: unknown, opciones?: OpcionesMotor): Promise<MotorOutput> {
   const requestId = randomUUID();
   const inicio = Date.now();
 
@@ -41,6 +57,26 @@ export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
     });
   }
 
+  const projectName = input.projectName || 'Proyecto Sin Nombre';
+  // `model` ya trae default del propio Zod schema (MODELO_DEFAULT) y está
+  // validado contra el enum; no hace falta un fallback manual acá.
+  const modeloSolicitado = input.model;
+  const temperature = typeof input.temperature === 'number' ? input.temperature : 0.1;
+
+  // E1 — normalización de adjuntos + límites de carga (SEC-05, D-06). Va
+  // antes que la comprobación de la API key a propósito: un payload mal
+  // formado se rechaza (400) sin importar si el servicio está disponible.
+  const resultadoIngest = normalizarAdjuntos(input.images);
+  if (!resultadoIngest.ok) {
+    throw new MotorError({
+      status: 400,
+      errorType: 'VALIDATION_ERROR',
+      publicMessage: resultadoIngest.motivo,
+      requestId,
+    });
+  }
+  const adjuntosNormalizados = resultadoIngest.adjuntos;
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new MotorError({
@@ -52,14 +88,6 @@ export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
     });
   }
 
-  const projectName = input.projectName || 'Proyecto Sin Nombre';
-  // `model` ya trae default del propio Zod schema (MODELO_DEFAULT) y está
-  // validado contra el enum; no hace falta un fallback manual acá.
-  const modeloSolicitado = input.model;
-  const temperature = typeof input.temperature === 'number' ? input.temperature : 0.1;
-
-  // E1 — normalización de adjuntos.
-  const adjuntosNormalizados = normalizarAdjuntos(input.images);
   // E2 — limpieza base64, MIME real y saneamiento de SVG.
   const adjuntosClasificados = adjuntosNormalizados.map(clasificarYSanearAdjunto);
 
@@ -69,9 +97,9 @@ export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
     notes: input.notes,
     adjuntosClasificados,
   });
-  const systemInstruction = resolverSystemInstruction();
+  const systemInstruction = resolverSystemInstruction(opciones?.systemInstructionOverride);
 
-  // E5 — inferencia con fallback.
+  // E5 — inferencia con fallback, timeout, circuit breaker y validación de forma.
   let resultado;
   try {
     resultado = await ejecutarInferencia({
@@ -94,33 +122,12 @@ export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
     throw err;
   }
 
-  // E6 — parseo defensivo + recómputo de horas.
-  let parsedData: Record<string, unknown>;
-  try {
-    parsedData = parsearRespuestaMotor(resultado.rawJson);
-  } catch (err) {
-    registrarEventoMotor({
-      requestId,
-      modeloSolicitado,
-      modeloUsado: resultado.modeloUsado,
-      latenciaMs: Date.now() - inicio,
-      riesgoInjection,
-      resultado: 'error',
-      errorType: 'UNHANDLED_ERROR',
-    });
-    throw new MotorError({
-      status: 500,
-      errorType: 'UNHANDLED_ERROR',
-      publicMessage: 'El modelo devolvió una respuesta que no se pudo interpretar. Intenta nuevamente.',
-      requestId,
-      cause: err,
-    });
-  }
-
-  const horasRecalculadas = recalcularHorasTotales(parsedData);
-  if (horasRecalculadas > 0) {
-    parsedData.horas_totales_validadas = horasRecalculadas;
-  }
+  // E6 — invariantes "blandos" (INV-01, 03, 05) + recómputo de horas (INV-02).
+  // Los invariantes "duros" (INV-04, 06) ya se aplicaron dentro de la
+  // cascada vía MotorOutputDataSchema — lo que llega acá ya tiene forma válida.
+  const {data: dataCorregida, correcciones} = aplicarInvariantesSuaves(resultado.data);
+  const horasRecalculadas = recalcularHorasTotales(dataCorregida);
+  dataCorregida.horas_totales_validadas = horasRecalculadas;
 
   const isAutoResolved = resultado.modeloUsado !== modeloSolicitado;
 
@@ -134,7 +141,7 @@ export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
   });
 
   return {
-    ...(parsedData as Omit<MotorOutput, 'metadata'>),
+    ...dataCorregida,
     metadata: {
       proyecto: projectName,
       fechaGeneracion: new Date().toISOString(),
@@ -147,6 +154,8 @@ export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
       cantidadImagenes: adjuntosNormalizados.length,
       requestId,
       riesgoInjection,
+      intentosCascada: resultado.intentos,
+      correccionesInvariantes: correcciones,
     },
   };
 }

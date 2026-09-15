@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { AjusteRecalculo } from '../domain/planning';
+import { AjusteRecalculo } from '../lib/domain/recalculo';
 
 interface RecalculationNoticeProps {
   ajustes: AjusteRecalculo[];

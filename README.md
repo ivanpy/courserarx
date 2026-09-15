@@ -616,8 +616,8 @@ Generada **en servidor** por `lib/export/xlsx.ts` con `write-excel-file/node` y 
 | **0 — Andamiaje** ✅ | `next.config.ts`, `postcss.config.mjs`, `tsconfig.json` con `strict`, `app/layout.tsx`. Vite y Express siguen vivos en paralelo. | D-14 | `npm run build` compila con Tailwind aplicado |
 | **1 — Motor al servidor** ✅ | Estallar `server.ts` en `lib/engine/*`. `app/api/motor/route.ts`. `errors.ts` corta la fuga de stack. `guardrails.ts` nuevo. | D-05, D-09, D-11 | Paridad funcional; la respuesta de error no contiene stack ni internals |
 | **2 — Cierre de frontera** ✅ | `import 'server-only'`. Mover prompt y fixture. Borrar `geminiService.ts` y la cascada cliente. DTO `ModeloPublico`. | D-01, D-02, D-03, D-04, D-08, D-12 | `grep` del prompt y de `topK` sobre `.next/static/**` da **cero** |
-| **3 — Resiliencia** | RES-01…10: clasificación de errores, backoff, `AbortController`, circuit breaker, telemetría. | D-06, D-07, D-10 | Una clave inválida produce 1 intento, no 7; JSON truncado no devuelve 500 |
-| **4 — Dominio unificado** | `lib/domain/*`: colapsar los 5 `reduce`, las 3 agregaciones por rol, los 2 slugs; decidir la fórmula de sprint. | — | `calcularMetricas` reproduce los números del panel ejecutivo |
+| **3 — Resiliencia** ✅ | RES-01…10: clasificación de errores, backoff, `AbortController`, circuit breaker, telemetría. | D-06, D-07, D-10 | Una clave inválida produce 1 intento, no 7; JSON truncado no devuelve 500 |
+| **4 — Dominio unificado** ✅ | `lib/domain/*`: colapsar los 5 `reduce`, las 3 agregaciones por rol, los 2 slugs; decidir la fórmula de sprint. | — | `calcularMetricas` reproduce los números del panel ejecutivo |
 | **5 — Route groups y auth** | `middleware.ts`, `lib/auth/*`, `assertAdmin()`, regla ESLint de frontera. | D-13 | Ningún componente admin es alcanzable desde `(stakeholder)` |
 | **6 — Persistencia** | `db/0001_init.sql`, `lib/db/*`, Server Actions de escritura. | — | Una propuesta se guarda y recupera íntegra (11 tablas, CASCADE); editar una tarifa no altera propuestas ya guardadas |
 | **7 — UI Admin** | `(admin)/tpm/**`. `PromptEditor` y `ModelProfileSelector` sobre Server Actions. | — | Flujo completo sin `/api/analyze` legacy |
@@ -757,6 +757,125 @@ externo sin resolver (verificado leyendo el `dist/server.cjs` generado), así qu
   fixture", pero ninguna deuda D-01..D-12 depende de dónde vive `TURNERO_SAMPLE_DATA`: es
   contenido de demo, no la vulnerabilidad. Se relocaliza cuando el CLI `benchmark` (§12,
   Fase 9/10) lo necesite como fuente compartida con la UI.
+
+### 14.4 Alcance real de la Fase 3
+
+**Hallazgo que cambió el diseño respecto al plan original:** `@google/genai` expone
+`ApiError` (única clase pública, con `.status` = código HTTP real de Gemini) y clases
+internas inspeccionables por `.name` en runtime (`RequestTimeoutError`,
+`ConnectionError`). Esto reemplazó por completo la heurística de
+`String(error).includes("429")` por clasificación tipada real (RES-09). El SDK además
+reintenta internamente por defecto (`httpOptions.retryOptions`, hasta 5 intentos); se
+desactivó (`attempts: 1`) en cada llamada — sin eso, la cascada de hasta 6 modelos anidada
+sobre 5 reintentos internos podría disparar hasta 30 llamadas HTTP reales por petición,
+justo lo opuesto al criterio de salida de esta fase.
+
+**Cerrado en esta fase:**
+
+- **D-06 (SEC-05)** — `notes` ≤ 100 000 caracteres e `images` ≤ 8 en `contracts.ts`; 5 MB
+  por adjunto y 20 MB por petición en `ingest.ts` (medido sobre la longitud del string tal
+  como llega, no bytes decodificados — ver comentario en el archivo). El chequeo de
+  adjuntos se reordenó para correr *antes* de comprobar `GEMINI_API_KEY`: un payload mal
+  formado se rechaza con 400 sin importar si el servicio está disponible.
+- **D-07 (VAL-07 + INV-04 + INV-06)** — nuevo `MotorOutputDataSchema` (Zod) en
+  `contracts.ts` valida la forma completa de la salida del modelo; `horas.gt(0).max(120)`
+  (INV-04) y `.min(1)` en `hitos`/`tareas` (INV-06) quedan expresados directamente en el
+  schema, sin código de validación aparte. Un `.safeParse()` fallido dentro del bucle de
+  `inference.ts` es la señal de "reintentar con el siguiente modelo" (RES-06).
+- **D-10 (RES-04)** — presupuesto global de 45s + timeout por intento (20s) vía
+  `httpOptions.timeout`, no un `AbortController` construido a mano (ver más abajo).
+  `app/api/motor/route.ts` suma `maxDuration = 60`.
+- **RES-01/09** — clasificación tipada: `ApiError` con status 429/503 reintenta;
+  400/401/403/404 aborta la cascada de inmediato (no tiene sentido seguir probando modelos
+  si la clave es inválida). `RequestTimeoutError`/`ConnectionError` reintentan.
+- **RES-02** — backoff exponencial con jitter entre reintentos, acotado por el presupuesto
+  global restante.
+- **RES-05** — se preserva el error del modelo *solicitado* (`candidatos[0]`) para la
+  clasificación final, no el del último candidato de la cascada.
+- **RES-07** — circuit breaker por modelo en memoria (nuevo `circuit-breaker.ts`): 3 fallos
+  consecutivos abren el circuito 30s.
+- **INV-01, 03, 05** — invariantes "blandos" (nuevo `invariants.ts`), aplicados una sola
+  vez sobre la salida ya validada: fuerzan `extras_opcionales[].horas_estimadas` a 0,
+  reasignan `rol` inválido a `'Otro'`, normalizan `impacto` inválido a `'Medio'`. Cada
+  corrección queda en `metadata.correccionesInvariantes`.
+
+**Deliberadamente fuera de esta fase:**
+
+- **INV-07** (ninguna tarea cita exclusivamente una fuente `BOCETO_*`) — `RESPONSE_SCHEMA`
+  no le pide al modelo una fuente por tarea (solo `alertas_conflictos` tiene
+  `fuente_imagen`/`fuente_texto`), así que no hay campo que inspeccionar sin antes ampliar
+  el contrato de salida de la IA. Es un cambio de alcance distinto, no una validación que
+  faltara agregar.
+- **RES-10 (telemetría persistente)** — sigue solo en consola (`telemetry.ts`, desde la
+  Fase 1), ahora con `intentosCascada` además de lo que ya logueaba. La escritura real en
+  `propuestas.metadata_json` y la vista `/tpm/proyectos/:id/diagnostico` dependen de la
+  Fase 6 (DB) y la Fase 5 (auth, para el "solo admin").
+- **Circuit breaker sin persistencia** — estado en memoria del proceso, no compartido entre
+  instancias. Suficiente para el objetivo real (ahorrar latencia dentro de un mismo proceso
+  activo); coordinar resiliencia entre réplicas es un problema distinto.
+
+**Una simplificación deliberada respecto al RES-04 tal como está redactado:** en vez de
+construir un `AbortController` propio, el timeout por intento y el presupuesto global se
+resuelven con `httpOptions.timeout` (calculado como `min(tope por intento, presupuesto
+restante)` en cada llamada). Activa el `AbortSignal` interno del SDK y produce
+`RequestTimeoutError` de forma confiable — mismo resultado funcional, menos código, y una
+clasificación de error más precisa que reconstruir el mecanismo a mano.
+
+### 14.5 Alcance real de la Fase 4
+
+**Hallazgo previo al inicio de la fase:** la fórmula de sprint y la tarifa por defecto ya
+habían sido corregidas por un commit anterior (`a5d2731`, previo incluso a la Fase 0), que
+introdujo `src/domain/planning.ts` como parche puntual. Esa ubicación no correspondía al
+árbol destino de §4.1 (`lib/domain/*` → `src/lib/domain/*` por el alias `@/*`), y dejaba sin
+resolver el resto de los duplicados de §4.4. Esta fase reemplaza ese archivo por la
+estructura completa y correcta, sin reabrir una decisión ya tomada.
+
+**Cerrado en esta fase:**
+
+- **Los 5 `reduce` de suma de horas** — [helpers.ts:140,214,282](src/utils/helpers.ts),
+  [ProposalDashboard.tsx:597](src/components/ProposalDashboard.tsx#L597) y
+  [ExecutiveManagementPanel.tsx:101](src/components/ExecutiveManagementPanel.tsx#L101) —
+  colapsan en `lib/domain/horas.ts` (`sumarHorasTareas`, `horasPorHito`, `contarTareas`).
+- **Las 3 agregaciones por rol** colapsan en `lib/domain/roles.ts`
+  (`agregarHorasPorRol`, `rolesUnicos`).
+- **El slug de proyecto**, en realidad repartido en **6 sitios** (no 2 como estimaba
+  originalmente esta sección: `helpers.ts` ×3, `ProposalDashboard.tsx` ×2 y
+  [App.tsx:212](src/App.tsx#L212), encontrado al auditar el código antes de tocarlo) —
+  colapsa en `lib/domain/slug.ts`. **Gana la variante robusta**
+  (`[^a-z0-9]+` → `_`, no solo espacios): un nombre de proyecto con `:` o `?` producía un
+  nombre de archivo inválido en Windows bajo la variante ingenua. Cambia el nombre de
+  archivo de las exportaciones JSON y del CSV de Jira; no cambia ninguna cifra mostrada.
+- **La fórmula de sprint y la tarifa por defecto**, decisión ya tomada en `a5d2731` y
+  ratificada acá: capacidad configurable ÷ 2 (no ÷40 fijo); `$35/h` (no `$45/h`).
+- **`cronograma.ts` recibe `startDate: Date` como parámetro**, sin `new Date()` interno.
+  `ExecutiveManagementPanel.tsx` sigue leyendo la fecha de un `<input type="date">`
+  controlado y la convierte antes de llamar al dominio; el `new Date()` que queda en el
+  componente solo siembra el valor por defecto de ese input, no participa del cálculo.
+- **`calcularMetricas()`** en `lib/domain/metricas.ts` orquesta horas + roles + sprints +
+  costos + cronograma + riesgo en un único DTO. `ExecutiveManagementPanel.tsx` ahora lo
+  llama una sola vez por render en lugar de sostener seis `useMemo` independientes;
+  verificado contra el caso Turnero en el navegador (Playwright/chrome-devtools): 50h,
+  3 hitos, $1750 USD, 2 semanas / 1 sprint, fechas de hito y agregación por rol coinciden
+  con lo calculado a mano a partir de las mismas fórmulas.
+- Efecto colateral corregido: `~${teamCapacityWeekly / 40} FTE` en la minuta gerencial
+  usaba un `40` literal en vez de `CAPACIDAD_SEMANAL_HORAS`.
+
+**Deliberadamente fuera de esta fase:**
+
+- **`horas_totales_validadas` no se recalcula en el cliente.** Sigue siendo la cifra
+  autoritativa leída directamente de la propuesta (INV-02 ya la garantiza en
+  `lib/engine/parse.ts`, del lado del motor). El fixture `TURNERO_SAMPLE_DATA` declara
+  `horas_totales_validadas: 50` mientras la suma real de sus tareas da 56h — inconsistencia
+  preexistente del fixture, no introducida por esta fase ni corregida acá: excede el
+  alcance de "colapsar duplicados" y tocarla sin más contexto alteraría una cifra ya usada
+  como referencia en el benchmark de §13.
+- **`minuta.ts` y `riesgo.ts` como archivos separados del árbol destino de §4.1** — el
+  umbral de riesgo se extrajo a `lib/domain/riesgo.ts` (se usa en `calcularMetricas`), pero
+  la generación de texto de la minuta gerencial (`handleCopyExecutiveMemo`) se deja en el
+  componente: es formato de presentación para un botón "copiar", no aritmética de negocio,
+  y construirlo ahora sería anticipar la Fase 7/8 sin un consumidor real todavía.
+- **No se tocó `src/app/**`** — Fase 4 no construye UI Next; `lib/domain/*` queda listo
+  para que las Fases 7-8 lo consuman desde Server Components.
 
 ---
 

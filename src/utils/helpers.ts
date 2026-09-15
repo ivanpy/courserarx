@@ -1,5 +1,8 @@
 import { ProposalResult } from '../types';
 import writeXlsxFile, { type Sheet, type Row } from 'write-excel-file/browser';
+import { horasPorHito, contarTareas } from '../lib/domain/horas';
+import { rolesUnicos } from '../lib/domain/roles';
+import { proyectoSlug } from '../lib/domain/slug';
 
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -117,7 +120,7 @@ export function generateMarkdownExport(proposal: ProposalResult): string {
 
 export async function exportHitosXlsx(proposal: ProposalResult) {
   const projectTitle = proposal.metadata?.proyecto || 'Proyecto';
-  const projectSlug = projectTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'proyecto';
+  const projectSlug = proyectoSlug(proposal.metadata?.proyecto);
   const fileName = `hitos_backlog_${projectSlug}.xlsx`;
 
   // Fila 1: Títulos de columna principales en Negrita (con estilo ejecutivo azul marino)
@@ -137,7 +140,7 @@ export async function exportHitosXlsx(proposal: ProposalResult) {
 
   // Recorrer cada Hito y sus tareas técnicas
   proposal.hitos?.forEach((hito, hIdx) => {
-    const totalHitoHours = hito.tareas?.reduce((acc, t) => acc + (Number(t.horas) || 0), 0) || 0;
+    const totalHitoHours = horasPorHito(hito);
     const hitoName = hito.nombre_meta || `Hito ${hIdx + 1}`;
 
     // Fila distintiva del Hito con título en Negrita y fondo suave
@@ -211,9 +214,9 @@ export async function exportHitosXlsx(proposal: ProposalResult) {
   const summaryDataRows: Row[] = [summaryHeaderRow];
 
   proposal.hitos?.forEach((hito, idx) => {
-    const hitoHours = hito.tareas?.reduce((acc, t) => acc + (Number(t.horas) || 0), 0) || 0;
+    const hitoHours = horasPorHito(hito);
     const percentage = totalHours > 0 ? ((hitoHours / totalHours) * 100).toFixed(1) + '%' : '0%';
-    const roles = Array.from(new Set(hito.tareas?.map(t => t.rol || 'Fullstack'))).join(', ');
+    const roles = rolesUnicos(hito.tareas).join(', ');
 
     summaryDataRows.push([
       { value: `Hito ${idx + 1}`, align: 'center', fontWeight: 'bold' },
@@ -230,7 +233,7 @@ export async function exportHitosXlsx(proposal: ProposalResult) {
     { value: 'TOTAL', fontWeight: 'bold', backgroundColor: '#0F172A', textColor: '#FFFFFF', align: 'center' },
     { value: 'Presupuesto Total del Proyecto', fontWeight: 'bold', backgroundColor: '#0F172A', textColor: '#FFFFFF' },
     { value: 'Consolidado Validado', backgroundColor: '#0F172A', textColor: '#FFFFFF' },
-    { value: proposal.hitos?.reduce((acc, h) => acc + (h.tareas?.length || 0), 0) || 0, type: Number, fontWeight: 'bold', align: 'center', backgroundColor: '#0F172A', textColor: '#FFFFFF' },
+    { value: contarTareas(proposal.hitos), type: Number, fontWeight: 'bold', align: 'center', backgroundColor: '#0F172A', textColor: '#FFFFFF' },
     { value: Number(totalHours), type: Number, fontWeight: 'bold', align: 'right', backgroundColor: '#0F172A', textColor: '#38BDF8' },
     { value: '100%', fontWeight: 'bold', align: 'right', backgroundColor: '#0F172A', textColor: '#38BDF8' },
     { value: projectTitle, backgroundColor: '#0F172A', textColor: '#FFFFFF' }
@@ -279,7 +282,7 @@ export function exportHitosCsv(proposal: ProposalResult) {
   ];
 
   proposal.hitos?.forEach((hito, hIdx) => {
-    const totalHitoHours = hito.tareas?.reduce((acc, t) => acc + (Number(t.horas) || 0), 0) || 0;
+    const totalHitoHours = horasPorHito(hito);
     const hitoName = hito.nombre_meta || `Hito ${hIdx + 1}`;
 
     hito.tareas?.forEach(t => {
@@ -301,7 +304,7 @@ export function exportHitosCsv(proposal: ProposalResult) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  const projectSlug = projectTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'proyecto';
+  const projectSlug = proyectoSlug(proposal.metadata?.proyecto);
   link.download = `hitos_backlog_${projectSlug}.csv`;
   document.body.appendChild(link);
   link.click();
@@ -332,7 +335,7 @@ export function exportToJiraCsv(proposal: ProposalResult) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  const projectSlug = (proposal.metadata?.proyecto || 'proyecto').toLowerCase().replace(/\s+/g, '_');
+  const projectSlug = proyectoSlug(proposal.metadata?.proyecto);
   link.download = `backlog_jira_${projectSlug}.csv`;
   document.body.appendChild(link);
   link.click();

@@ -1,12 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { ProposalResult } from '../types';
 import { exportHitosXlsx, exportHitosCsv, downloadJsonFile } from '../utils/helpers';
-import {
-  CAPACIDAD_SEMANAL_HORAS,
-  calcularSemanasHabiles,
-  calcularSprints,
-  calcularCosto
-} from '../domain/planning';
+import { CAPACIDAD_SEMANAL_HORAS } from '../lib/domain/constants';
+import { calcularMetricas } from '../lib/domain/metricas';
 import {
   Briefcase,
   Calendar,
@@ -51,93 +47,53 @@ export const ExecutiveManagementPanel: React.FC<ExecutiveManagementPanelProps> =
   const [teamCapacityWeekly, setTeamCapacityWeekly] = useState<number>(CAPACIDAD_SEMANAL_HORAS);
   const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
 
-  // Core metrics
-  const totalHours = proposal.horas_totales_validadas || 0;
-  const totalHitos = proposal.hitos?.length || 0;
-  const totalTasks = proposal.hitos?.reduce((acc, h) => acc + (h.tareas?.length || 0), 0) || 0;
-  const estimatedCost = calcularCosto(totalHours, hourlyRate);
+  // Única fuente de cómputo: horas, roles, sprints, costos y cronograma (lib/domain, Fase 4).
+  const metricas = useMemo(
+    () => calcularMetricas({
+      proposal,
+      tarifaHora: hourlyRate,
+      capacidadSemanal: teamCapacityWeekly,
+      startDate: new Date(startDateStr)
+    }),
+    [proposal, hourlyRate, teamCapacityWeekly, startDateStr]
+  );
 
-  // Duration in working weeks
-  const workingWeeks = calcularSemanasHabiles(totalHours, teamCapacityWeekly);
-  const estimatedSprints = calcularSprints(totalHours, teamCapacityWeekly);
+  const totalHours = metricas.totalHoras;
+  const totalHitos = metricas.totalHitos;
+  const totalTasks = metricas.totalTareas;
+  const estimatedCost = metricas.costoEstimado;
+  const workingWeeks = metricas.semanasHabiles;
+  const estimatedSprints = metricas.sprintsEstimados;
 
-  // Role Breakdown
-  const roleMetrics = useMemo(() => {
-    const map: Record<string, { hours: number; tasksCount: number }> = {};
-    (proposal.hitos || []).forEach(hito => {
-      (hito.tareas || []).forEach(t => {
-        const r = t.rol || 'Fullstack';
-        if (!map[r]) {
-          map[r] = { hours: 0, tasksCount: 0 };
-        }
-        map[r].hours += Number(t.horas) || 0;
-        map[r].tasksCount += 1;
-      });
-    });
-
-    const entries = Object.entries(map).map(([role, data]) => {
-      const percentage = totalHours > 0 ? (data.hours / totalHours) * 100 : 0;
-      const cost = data.hours * hourlyRate;
-      return {
-        role,
-        hours: data.hours,
-        tasksCount: data.tasksCount,
-        percentage,
-        cost
-      };
-    });
-
-    // Sort by hours descending
-    entries.sort((a, b) => b.hours - a.hours);
-    return entries;
-  }, [proposal, totalHours, hourlyRate]);
+  const roleMetrics = metricas.rolesPorHoras.map(r => ({
+    role: r.rol,
+    hours: r.horas,
+    tasksCount: r.tareas,
+    percentage: r.porcentaje,
+    cost: r.costo
+  }));
 
   // Projected Milestone Delivery Dates
-  const hitosWithDates = useMemo(() => {
-    const start = new Date(startDateStr);
-    let cumulativeHours = 0;
-
-    return (proposal.hitos || []).map((hito, idx) => {
-      const hitoHours = (hito.tareas || []).reduce((acc, t) => acc + (Number(t.horas) || 0), 0);
-      cumulativeHours += hitoHours;
-
-      // Calculate calendar days: (cumulativeHours / capacity per week) * 7 days
-      const daysOffset = Math.ceil((cumulativeHours / teamCapacityWeekly) * 7);
-      const deliveryDate = new Date(start);
-      deliveryDate.setDate(deliveryDate.getDate() + daysOffset);
-
-      const formattedDelivery = deliveryDate.toLocaleDateString('es-ES', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric'
-      });
-
-      const percentageOfTotal = totalHours > 0 ? ((hitoHours / totalHours) * 100).toFixed(1) : '0';
-      const hitoCost = hitoHours * hourlyRate;
-
-      return {
-        ...hito,
-        index: idx + 1,
-        hours: hitoHours,
-        cost: hitoCost,
-        percentage: percentageOfTotal,
-        deliveryDate: formattedDelivery,
-        tasksCount: hito.tareas?.length || 0
-      };
-    });
-  }, [proposal, startDateStr, teamCapacityWeekly, totalHours, hourlyRate]);
+  const hitosWithDates = metricas.hitosProyectados.map(hp => ({
+    ...hp.hito,
+    index: hp.index,
+    hours: hp.horas,
+    cost: hp.costo,
+    percentage: hp.porcentaje.toFixed(1),
+    deliveryDate: hp.fechaEntrega.toLocaleDateString('es-ES', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    }),
+    tasksCount: hp.hito.tareas?.length || 0
+  }));
 
   // Overall End Date
-  const projectedEndDate = useMemo(() => {
-    const start = new Date(startDateStr);
-    const totalDaysOffset = Math.ceil((totalHours / teamCapacityWeekly) * 7);
-    start.setDate(start.getDate() + totalDaysOffset);
-    return start.toLocaleDateString('es-ES', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    });
-  }, [startDateStr, totalHours, teamCapacityWeekly]);
+  const projectedEndDate = metricas.fechaFinProyecto.toLocaleDateString('es-ES', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
 
   const formattedStartDate = useMemo(() => {
     const start = new Date(startDateStr);
@@ -148,16 +104,21 @@ export const ExecutiveManagementPanel: React.FC<ExecutiveManagementPanelProps> =
     });
   }, [startDateStr]);
 
-  const conflictsCount = proposal.alertas_conflictos?.length || 0;
-  const extrasCount = proposal.extras_opcionales?.length || 0;
-  const suggestionsCount = proposal.sugerencias_proactivas?.length || 0;
+  const conflictsCount = metricas.conflictosCount;
+  const extrasCount = metricas.extrasCount;
+  const suggestionsCount = metricas.sugerenciasCount;
 
-  // Risk Level determination
+  // Risk Level presentation — el umbral en sí vive en lib/domain/riesgo.ts
   const riskLevel = useMemo(() => {
-    if (conflictsCount > 3) return { label: 'Atención Requerida', color: 'text-rose-700 bg-rose-50 border-rose-200' };
-    if (conflictsCount > 0) return { label: 'Bajo Control (Autoresuelto)', color: 'text-amber-800 bg-amber-50 border-amber-200' };
-    return { label: 'Riesgo Mínimo', color: 'text-emerald-800 bg-emerald-50 border-emerald-200' };
-  }, [conflictsCount]);
+    switch (metricas.nivelRiesgo) {
+      case 'atencion':
+        return { label: 'Atención Requerida', color: 'text-rose-700 bg-rose-50 border-rose-200' };
+      case 'controlado':
+        return { label: 'Bajo Control (Autoresuelto)', color: 'text-amber-800 bg-amber-50 border-amber-200' };
+      default:
+        return { label: 'Riesgo Mínimo', color: 'text-emerald-800 bg-emerald-50 border-emerald-200' };
+    }
+  }, [metricas.nivelRiesgo]);
 
   // Copy Executive Memo
   const handleCopyExecutiveMemo = () => {
@@ -173,7 +134,7 @@ export const ExecutiveManagementPanel: React.FC<ExecutiveManagementPanelProps> =
 - **Cantidad de Tareas Atómicas:** ${totalTasks} tareas técnicas
 - **Cantidad de Horas Validadas:** ${totalHours} horas (Master Truth)
 - **Inversión Presupuestada:** $${estimatedCost.toLocaleString()} USD (Tarifa simulada: $${hourlyRate}/h)
-- **Capacidad de Equipo Considerada:** ${teamCapacityWeekly}h/semana (~${teamCapacityWeekly / 40} FTE)
+- **Capacidad de Equipo Considerada:** ${teamCapacityWeekly}h/semana (~${teamCapacityWeekly / CAPACIDAD_SEMANAL_HORAS} FTE)
 
 #### 2. RESUMEN DEL PROYECTO
 ${proposal.resumen_ejecutivo}

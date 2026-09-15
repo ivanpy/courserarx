@@ -9,6 +9,7 @@ import { ErrorReviewModal } from './components/ErrorReviewModal';
 import { WelcomeModal } from './components/WelcomeModal';
 import { ProposalResult, UploadedImage, ReviewableError, ModeloPublico } from './types';
 import { downloadJsonFile, exportHitosCsv, exportHitosXlsx } from './utils/helpers';
+import { proyectoSlug } from './lib/domain/slug';
 import { TURNERO_SAMPLE_DATA } from './data/defaults';
 import {
   Sparkles,
@@ -209,7 +210,7 @@ export default function App() {
         onToggleViewMode={setViewMode}
         onExportJson={() => {
           if (proposal) {
-            const fileName = `propuesta_${proposal.metadata?.proyecto?.toLowerCase().replace(/\s+/g, '_') || 'backlog'}.json`;
+            const fileName = `propuesta_${proyectoSlug(proposal.metadata?.proyecto, 'backlog')}.json`;
             downloadJsonFile(proposal, fileName);
           }
         }}
