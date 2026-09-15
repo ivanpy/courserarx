@@ -167,7 +167,7 @@ courserarx/
 │
 ├── next.config.ts                        # ⚙️  serverExternalPackages: ['@google/genai','write-excel-file']
 ├── postcss.config.mjs                    # ⚙️  { '@tailwindcss/postcss': {} }
-├── tsconfig.json                         # ⚙️  jsx:'preserve', strict:true, @/*→./src/*
+├── tsconfig.json                         # ⚙️  jsx:'react-jsx', strict:true, @/*→./src/*
 ├── eslint.config.mjs                     # ⚙️  no-restricted-imports (frontera admin/stakeholder)
 ├── .env.local                            # 🔒 NUNCA commit — único lugar con secretos reales
 │
@@ -613,7 +613,7 @@ Generada **en servidor** por `lib/export/xlsx.ts` con `write-excel-file/node` y 
 
 | Fase | Contenido | Cierra | Criterio de salida |
 |---|---|---|---|
-| **0 — Andamiaje** 🚧 | `next.config.ts`, `postcss.config.mjs`, `tsconfig.json` con `strict`, `app/layout.tsx`. Vite y Express siguen vivos en paralelo. | D-14 | `npm run build` compila con Tailwind aplicado |
+| **0 — Andamiaje** ✅ | `next.config.ts`, `postcss.config.mjs`, `tsconfig.json` con `strict`, `app/layout.tsx`. Vite y Express siguen vivos en paralelo. | D-14 | `npm run build` compila con Tailwind aplicado |
 | **1 — Motor al servidor** 🚧 | Estallar `server.ts` en `lib/engine/*`. `app/api/motor/route.ts`. `errors.ts` corta la fuga de stack. `guardrails.ts` nuevo. | D-05, D-09, D-11 | Paridad funcional; la respuesta de error no contiene stack ni internals |
 | **2 — Cierre de frontera** 🚧 | `import 'server-only'`. Mover prompt y fixture. Borrar `geminiService.ts` y la cascada cliente. DTO `ModeloPublico`. | D-01, D-02, D-03, D-04, D-08, D-12 | `grep` del prompt y de `topK` sobre `.next/static/**` da **cero** |
 | **3 — Resiliencia** | RES-01…10: clasificación de errores, backoff, `AbortController`, circuit breaker, telemetría. | D-06, D-07, D-10 | Una clave inválida produce 1 intento, no 7; JSON truncado no devuelve 500 |
@@ -626,6 +626,33 @@ Generada **en servidor** por `lib/export/xlsx.ts` con `write-excel-file/node` y 
 | **10 — CLI y demolición** | `cli/*` con `--conditions react-server`. Borrar `server.ts`, `main.tsx`, `index.html`, `vite.config.ts`, `App.tsx`, `services/`, `helpers.ts`. | — | `npm run cli benchmark` en verde; `package-lock.json` sin express/vite/tsx |
 
 🚧 = bloqueante de cualquier despliegue accesible en red.
+
+### 14.1 Convivencia de scripts durante las fases 0–9
+
+Mientras los dos árboles coexisten, `npm run build` y `npm start` apuntan al monolito
+Next.js; el árbol Vite + Express conserva sus propios comandos con sufijo `:legacy`.
+`npm run dev` sigue siendo **el legacy** a propósito, porque es donde queda la UI
+funcional hasta la Fase 7.
+
+| Script | Destino |
+|---|---|
+| `npm run dev` | Vite + Express legacy — puerto 3000 |
+| `npm run dev:next` | Next.js — puerto 3001, para no chocar con el anterior |
+| `npm run build` / `npm start` | Next.js |
+| `npm run build:legacy` / `npm run start:legacy` | Vite + esbuild → `dist/server.cjs` |
+| `npm run lint` | `tsc --noEmit` sobre **todo** el repo, ya en modo `strict` |
+
+Tres detalles no obvios del andamiaje:
+
+- **`jsx` no puede ser `preserve`.** Next 16 compila con Turbopack y reescribe el
+  `tsconfig.json` a `react-jsx` en cada build. No es negociable desde la config.
+- **Tailwind corre por dos pipelines distintos.** Next usa `postcss.config.mjs`; el
+  árbol legacy usa el plugin `@tailwindcss/vite`. Para que Vite no cargue la config
+  PostCSS del raíz y procese Tailwind dos veces, `vite.config.ts` fija una config
+  PostCSS vacía inline. Ambos pipelines desaparecen en la Fase 10.
+- **`src/services/` queda fuera de `tsconfig.json`.** Es código muerto, pero contiene el
+  `proposalResponseSchema` que la Fase 2 debe rescatar; excluirlo evita que su único
+  error en `strict` bloquee el build sin tener que borrarlo antes de tiempo.
 
 ---
 
