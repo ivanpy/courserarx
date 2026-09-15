@@ -7,14 +7,6 @@ import { obtenerSeniorityPorDefecto, resolverSeniorityDefault } from './seniorit
 /** Tanto Pool como PoolClient sirven para lecturas — no necesitan transacción. */
 type Consultable = Pool | PoolClient;
 
-export interface DatosProyecto {
-  nombre: string;
-  descripcionNotas?: string | null;
-  systemInstructions?: string | null;
-  modeloIa?: string;
-  temperatura?: number;
-}
-
 export interface DatosPropuesta {
   monedaCotizacion: Moneda;
   tipoCambioUsdArs?: number | null;
@@ -23,44 +15,33 @@ export interface DatosPropuesta {
   fechaInicioProyectada?: string | null;
 }
 
-export interface PropuestaGuardada {
-  proyectoId: string;
-  propuestaId: string;
-}
-
 /**
- * Persiste una propuesta completa y toda su descendencia. El llamador (la
- * Server Action en lib/actions/propuestas.ts) es responsable de resolver la
- * sesión de Admin ANTES de invocar esto (SEC-03) y de envolver la llamada en
- * `withTransaction` (README §11: una propuesta parcialmente persistida
- * corrompería los totales del panel ejecutivo).
+ * Persiste una propuesta completa y toda su descendencia contra un proyecto
+ * YA EXISTENTE (crearProyecto/analizarProyecto son acciones separadas — el
+ * proyecto puede haberse creado en una llamada anterior). El llamador es
+ * responsable de resolver la sesión de Admin ANTES de invocar esto (SEC-03)
+ * y de envolver la llamada en `withTransaction` (README §11: una propuesta
+ * parcialmente persistida corrompería los totales del panel ejecutivo).
  *
  * `resultado.horas_totales_validadas` ya viene recalculado por
  * `recalcularHorasTotales()` (INV-02, parse.ts) y `rol`/`impacto` ya vienen
  * corregidos por `aplicarInvariantesSuaves()` (INV-01/03/05) — este módulo no
  * repite esas validaciones, confía en el motor y deja que los CHECK de la DB
  * sean la última red de seguridad.
+ *
+ * `metadataJson`, si se pasa, reemplaza a `resultado.metadata` tal cual llega
+ * a este módulo — así el llamador puede agregarle el snapshot del prompt
+ * usado (trazabilidad, resolución de arquitectura de la Fase 7) sin que ese
+ * texto pase nunca por `MotorOutputMetadata` ni por lo que ve el cliente de
+ * `/api/motor` (SEC-02).
  */
-export async function crearPropuesta(
+export async function crearPropuestaParaProyecto(
   client: PoolClient,
-  proyecto: DatosProyecto,
+  proyectoId: string,
   datosPropuesta: DatosPropuesta,
-  resultado: MotorOutput
-): Promise<PropuestaGuardada> {
-  const { rows: proyectoRows } = await client.query<{ id: string }>(
-    `INSERT INTO proyectos (nombre, descripcion_notas, system_instructions, modelo_ia, temperatura)
-     VALUES ($1, $2, $3, COALESCE($4, 'gemini-3.5-flash'), COALESCE($5, 0.10))
-     RETURNING id`,
-    [
-      proyecto.nombre,
-      proyecto.descripcionNotas ?? null,
-      proyecto.systemInstructions ?? null,
-      proyecto.modeloIa ?? null,
-      proyecto.temperatura ?? null,
-    ]
-  );
-  const proyectoId = proyectoRows[0].id;
-
+  resultado: MotorOutput,
+  metadataJson?: unknown
+): Promise<{ propuestaId: string }> {
   const { rows: propuestaRows } = await client.query<{ id: string }>(
     `INSERT INTO propuestas (
        proyecto_id, resumen_ejecutivo, horas_totales_validadas, moneda_cotizacion,
@@ -77,7 +58,7 @@ export async function crearPropuesta(
       datosPropuesta.tipoCambioFecha ?? null,
       datosPropuesta.capacidadSemanalHoras ?? null,
       datosPropuesta.fechaInicioProyectada ?? null,
-      JSON.stringify(resultado.metadata),
+      JSON.stringify(metadataJson ?? resultado.metadata),
     ]
   );
   const propuestaId = propuestaRows[0].id;
@@ -158,7 +139,7 @@ export async function crearPropuesta(
     );
   }
 
-  return { proyectoId, propuestaId };
+  return { propuestaId };
 }
 
 export interface TareaPersistida {

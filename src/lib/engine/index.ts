@@ -28,7 +28,16 @@ import {registrarEventoMotor} from './telemetry';
 export {MotorInputSchema, type MotorInput, type MotorOutput, type MotorOutputData} from './contracts';
 export {MotorError, type MotorErrorPublico} from './errors';
 
-export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
+export interface OpcionesMotor {
+  /**
+   * VAL-02 final (Fase 7): `proyectos.system_instructions` ya resuelto desde
+   * la DB por un caller autorizado (`assertAdmin()`), nunca un valor tomado
+   * del payload público. `/api/motor` no pasa esta opción.
+   */
+  systemInstructionOverride?: string | null;
+}
+
+export async function ejecutarMotor(inputCrudo: unknown, opciones?: OpcionesMotor): Promise<MotorOutput> {
   const requestId = randomUUID();
   const inicio = Date.now();
 
@@ -88,7 +97,7 @@ export async function ejecutarMotor(inputCrudo: unknown): Promise<MotorOutput> {
     notes: input.notes,
     adjuntosClasificados,
   });
-  const systemInstruction = resolverSystemInstruction();
+  const systemInstruction = resolverSystemInstruction(opciones?.systemInstructionOverride);
 
   // E5 — inferencia con fallback, timeout, circuit breaker y validación de forma.
   let resultado;

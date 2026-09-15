@@ -8,11 +8,11 @@ import 'server-only';
  * cliente podía reemplazar íntegramente Master Truth y Scope Isolation. Ahora
  * el único texto posible es este literal.
  *
- * Todavía no es la versión final de VAL-02 (resolver por `promptProfileId`
- * desde `proyectos.system_instructions` en DB, previa sesión Admin, para que
- * el TPM pueda tener perfiles distintos por proyecto) — esa depende de DB
- * (Fase 6) y auth (Fase 5). Lo que se cierra ya, sin esa infraestructura, es
- * la vulnerabilidad en sí: nadie externo puede alterar estas reglas.
+ * Fase 7 (VAL-02 final): `override` es el `proyectos.system_instructions`
+ * que `analizarProyecto`/`reanalizarProyecto` ya resolvieron desde la DB,
+ * detrás de `assertAdmin()` — nunca un valor que llegue del payload público
+ * de `/api/motor`. Esa ruta sigue llamando a `ejecutarMotor()` sin el
+ * segundo parámetro y recibe siempre este literal por defecto.
  */
 const DEFAULT_SYSTEM_INSTRUCTION = `Actúa como un Senior Technical Product Manager y Arquitecto de Software Fullstack experto en metodologías Ágiles. Tu misión es transformar requerimientos caóticos (imágenes y notas) en una propuesta profesional y un backlog técnico.
 
@@ -26,6 +26,6 @@ REGLAS DE PROCESAMIENTO:
 
 FORMATO DE SALIDA (JSON PURO): Responde exclusivamente con la estructura solicitada.`;
 
-export function resolverSystemInstruction(): string {
-  return DEFAULT_SYSTEM_INSTRUCTION;
+export function resolverSystemInstruction(override?: string | null): string {
+  return override ?? DEFAULT_SYSTEM_INSTRUCTION;
 }
