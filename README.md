@@ -616,7 +616,7 @@ Generada **en servidor** por `lib/export/xlsx.ts` con `write-excel-file/node` y 
 | **0 — Andamiaje** ✅ | `next.config.ts`, `postcss.config.mjs`, `tsconfig.json` con `strict`, `app/layout.tsx`. Vite y Express siguen vivos en paralelo. | D-14 | `npm run build` compila con Tailwind aplicado |
 | **1 — Motor al servidor** ✅ | Estallar `server.ts` en `lib/engine/*`. `app/api/motor/route.ts`. `errors.ts` corta la fuga de stack. `guardrails.ts` nuevo. | D-05, D-09, D-11 | Paridad funcional; la respuesta de error no contiene stack ni internals |
 | **2 — Cierre de frontera** ✅ | `import 'server-only'`. Mover prompt y fixture. Borrar `geminiService.ts` y la cascada cliente. DTO `ModeloPublico`. | D-01, D-02, D-03, D-04, D-08, D-12 | `grep` del prompt y de `topK` sobre `.next/static/**` da **cero** |
-| **3 — Resiliencia** | RES-01…10: clasificación de errores, backoff, `AbortController`, circuit breaker, telemetría. | D-06, D-07, D-10 | Una clave inválida produce 1 intento, no 7; JSON truncado no devuelve 500 |
+| **3 — Resiliencia** ✅ | RES-01…10: clasificación de errores, backoff, `AbortController`, circuit breaker, telemetría. | D-06, D-07, D-10 | Una clave inválida produce 1 intento, no 7; JSON truncado no devuelve 500 |
 | **4 — Dominio unificado** | `lib/domain/*`: colapsar los 5 `reduce`, las 3 agregaciones por rol, los 2 slugs; decidir la fórmula de sprint. | — | `calcularMetricas` reproduce los números del panel ejecutivo |
 | **5 — Route groups y auth** | `middleware.ts`, `lib/auth/*`, `assertAdmin()`, regla ESLint de frontera. | D-13 | Ningún componente admin es alcanzable desde `(stakeholder)` |
 | **6 — Persistencia** | `db/0001_init.sql`, `lib/db/*`, Server Actions de escritura. | — | Una propuesta se guarda y recupera íntegra (11 tablas, CASCADE); editar una tarifa no altera propuestas ya guardadas |
@@ -757,6 +757,69 @@ externo sin resolver (verificado leyendo el `dist/server.cjs` generado), así qu
   fixture", pero ninguna deuda D-01..D-12 depende de dónde vive `TURNERO_SAMPLE_DATA`: es
   contenido de demo, no la vulnerabilidad. Se relocaliza cuando el CLI `benchmark` (§12,
   Fase 9/10) lo necesite como fuente compartida con la UI.
+
+### 14.4 Alcance real de la Fase 3
+
+**Hallazgo que cambió el diseño respecto al plan original:** `@google/genai` expone
+`ApiError` (única clase pública, con `.status` = código HTTP real de Gemini) y clases
+internas inspeccionables por `.name` en runtime (`RequestTimeoutError`,
+`ConnectionError`). Esto reemplazó por completo la heurística de
+`String(error).includes("429")` por clasificación tipada real (RES-09). El SDK además
+reintenta internamente por defecto (`httpOptions.retryOptions`, hasta 5 intentos); se
+desactivó (`attempts: 1`) en cada llamada — sin eso, la cascada de hasta 6 modelos anidada
+sobre 5 reintentos internos podría disparar hasta 30 llamadas HTTP reales por petición,
+justo lo opuesto al criterio de salida de esta fase.
+
+**Cerrado en esta fase:**
+
+- **D-06 (SEC-05)** — `notes` ≤ 100 000 caracteres e `images` ≤ 8 en `contracts.ts`; 5 MB
+  por adjunto y 20 MB por petición en `ingest.ts` (medido sobre la longitud del string tal
+  como llega, no bytes decodificados — ver comentario en el archivo). El chequeo de
+  adjuntos se reordenó para correr *antes* de comprobar `GEMINI_API_KEY`: un payload mal
+  formado se rechaza con 400 sin importar si el servicio está disponible.
+- **D-07 (VAL-07 + INV-04 + INV-06)** — nuevo `MotorOutputDataSchema` (Zod) en
+  `contracts.ts` valida la forma completa de la salida del modelo; `horas.gt(0).max(120)`
+  (INV-04) y `.min(1)` en `hitos`/`tareas` (INV-06) quedan expresados directamente en el
+  schema, sin código de validación aparte. Un `.safeParse()` fallido dentro del bucle de
+  `inference.ts` es la señal de "reintentar con el siguiente modelo" (RES-06).
+- **D-10 (RES-04)** — presupuesto global de 45s + timeout por intento (20s) vía
+  `httpOptions.timeout`, no un `AbortController` construido a mano (ver más abajo).
+  `app/api/motor/route.ts` suma `maxDuration = 60`.
+- **RES-01/09** — clasificación tipada: `ApiError` con status 429/503 reintenta;
+  400/401/403/404 aborta la cascada de inmediato (no tiene sentido seguir probando modelos
+  si la clave es inválida). `RequestTimeoutError`/`ConnectionError` reintentan.
+- **RES-02** — backoff exponencial con jitter entre reintentos, acotado por el presupuesto
+  global restante.
+- **RES-05** — se preserva el error del modelo *solicitado* (`candidatos[0]`) para la
+  clasificación final, no el del último candidato de la cascada.
+- **RES-07** — circuit breaker por modelo en memoria (nuevo `circuit-breaker.ts`): 3 fallos
+  consecutivos abren el circuito 30s.
+- **INV-01, 03, 05** — invariantes "blandos" (nuevo `invariants.ts`), aplicados una sola
+  vez sobre la salida ya validada: fuerzan `extras_opcionales[].horas_estimadas` a 0,
+  reasignan `rol` inválido a `'Otro'`, normalizan `impacto` inválido a `'Medio'`. Cada
+  corrección queda en `metadata.correccionesInvariantes`.
+
+**Deliberadamente fuera de esta fase:**
+
+- **INV-07** (ninguna tarea cita exclusivamente una fuente `BOCETO_*`) — `RESPONSE_SCHEMA`
+  no le pide al modelo una fuente por tarea (solo `alertas_conflictos` tiene
+  `fuente_imagen`/`fuente_texto`), así que no hay campo que inspeccionar sin antes ampliar
+  el contrato de salida de la IA. Es un cambio de alcance distinto, no una validación que
+  faltara agregar.
+- **RES-10 (telemetría persistente)** — sigue solo en consola (`telemetry.ts`, desde la
+  Fase 1), ahora con `intentosCascada` además de lo que ya logueaba. La escritura real en
+  `propuestas.metadata_json` y la vista `/tpm/proyectos/:id/diagnostico` dependen de la
+  Fase 6 (DB) y la Fase 5 (auth, para el "solo admin").
+- **Circuit breaker sin persistencia** — estado en memoria del proceso, no compartido entre
+  instancias. Suficiente para el objetivo real (ahorrar latencia dentro de un mismo proceso
+  activo); coordinar resiliencia entre réplicas es un problema distinto.
+
+**Una simplificación deliberada respecto al RES-04 tal como está redactado:** en vez de
+construir un `AbortController` propio, el timeout por intento y el presupuesto global se
+resuelven con `httpOptions.timeout` (calculado como `min(tope por intento, presupuesto
+restante)` en cada llamada). Activa el `AbortSignal` interno del SDK y produce
+`RequestTimeoutError` de forma confiable — mismo resultado funcional, menos código, y una
+clasificación de error más precisa que reconstruir el mecanismo a mano.
 
 ---
 

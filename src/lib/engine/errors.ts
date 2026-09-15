@@ -5,20 +5,19 @@ import 'server-only';
  * del SDK y la lista interna de modelos de fallback (server.ts:404-409 en el
  * estado anterior). `MotorError` transporta el detalle completo para el log;
  * `toPublic()` proyecta solo lo que puede cruzar al cliente — es la versión
- * mínima de `MotorErrorPublico` (RES-08), sin campos que un futuro `errorType`
- * de resiliencia todavía no necesita.
+ * mínima de `MotorErrorPublico` (RES-08).
  *
- * NOTA: este módulo NO importa 'server-only' todavía. Ese guardia es entrega
- * de la Fase 2 (Cierre de frontera). Agregarlo ahora rompería `npm run dev`:
- * `tsx server.ts` no declara la condición de exportación `react-server`, y
- * fuera de esa condición el paquete `server-only` lanza al importarse (mismo
- * gotcha que documenta el README §12.1 para el CLI).
+ * `TIMEOUT` se agrega en la Fase 3 (RES-04): distingue "el proveedor tardó
+ * demasiado" (504, presupuesto global o por-intento agotado) de "el
+ * proveedor está saturado" (429, KNOWN_RATE_LIMIT_OR_DEMAND) — son causas
+ * distintas y el cliente puede reaccionar distinto a cada una.
  */
 
 export type MotorErrorType =
   | 'VALIDATION_ERROR'
   | 'CONFIGURATION_ERROR'
   | 'KNOWN_RATE_LIMIT_OR_DEMAND'
+  | 'TIMEOUT'
   | 'UNHANDLED_ERROR';
 
 export interface MotorErrorPublico {

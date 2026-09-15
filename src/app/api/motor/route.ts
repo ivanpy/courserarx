@@ -3,8 +3,9 @@ import {ejecutarMotor, MotorError} from '@/lib/engine';
 
 // El motor usa el SDK de Node de @google/genai — no puede correr en el Edge Runtime.
 export const runtime = 'nodejs';
-// TODO(Fase 3 · RES-04): maxDuration explícito cuando exista AbortController
-// por intento + presupuesto global de la petición.
+// RES-04: margen sobre el presupuesto global de 45s que ya aplica
+// ejecutarInferencia() (inference.ts) en toda la cascada de fallback.
+export const maxDuration = 60;
 
 /**
  * Adaptador fino (§12): leer entrada → ejecutarMotor() → serializar. La
