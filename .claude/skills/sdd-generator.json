@@ -1,0 +1,16 @@
+{
+  "name": "sdd:generate-use-cases",
+  "description": "Genera el documento de especificación técnica de casos de uso (SDD) mapeando la lógica de negocio hacia la arquitectura Next.js App Router.",
+  "scope": "local",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "target_module": {
+        "type": "string",
+        "description": "Nombre del módulo a desglosar (ej: ingestión-de-notas, motor-gemini, render-ejecutivo)."
+      }
+    },
+    "required": ["target_module"]
+  },
+  "prompt_template": "Actúa como un Arquitecto de Software Senior y Senior TPM. Basándote estrictamente en las reglas descritas en el archivo CLAUDE.md para el proyecto 'Constructor de backlog.ia', genera el bloque detallado de Casos de Uso para el módulo: {{target_module}}.\n\nCada caso de uso debe incluir obligatoriamente:\n1. ID y Nombre del Caso de Uso.\n2. Actor Principal (Admin/TPM vs Stakeholder/Cliente conforme a la Dualidad de Personas).\n3. Precondiciones y Disparador.\n4. Flujo Principal Paso a Paso: Mapeando explícitamente qué ocurre en el Frontend (Client Component / 'use client'), qué datos viajan a la API Route de Next.js (Route Handler / backend), y cómo interactúa con el SDK de `@google/genai` (modelos gemini-3.5-flash o gemini-3.8-flash, temperatura 0.1).\n5. Flujo Alternativo / Resiliencia: Qué sucede si falla el modelo principal y cómo se ejecuta el fallback automático.\n6. Criterios de Aceptación Técnicos (Atomicidad Técnica): Definir tareas específicas para Frontend, Backend, Base de Datos, DevOps y QA.\n7. Control de Alcance (Scope Isolation): Forzar la regla de que cualquier elemento visual del wireframe no explícito en la especificación de texto sea aislado en una sección con 0 horas de estimación.\n\nFormatea la salida en Markdown estructurado listo para anexar al SDD maestro."
+}
