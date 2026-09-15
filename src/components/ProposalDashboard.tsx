@@ -23,6 +23,14 @@ import {
 import { ProposalResult } from '../types';
 import { downloadJsonFile, exportHitosXlsx, exportHitosCsv, exportToJiraCsv, generateMarkdownExport } from '../utils/helpers';
 import { ExecutiveManagementPanel } from './ExecutiveManagementPanel';
+import { RecalculationNotice } from './RecalculationNotice';
+import {
+  TARIFA_HORA_USD,
+  CAPACIDAD_SEMANAL_HORAS,
+  calcularSprints,
+  calcularCosto,
+  describirRecalculo
+} from '../domain/planning';
 
 interface ProposalDashboardProps {
   proposal: ProposalResult;
@@ -33,15 +41,16 @@ export const ProposalDashboard: React.FC<ProposalDashboardProps> = ({ proposal, 
   const [activeTab, setActiveTab] = useState<'gerencia' | 'backlog' | 'conflictos' | 'extras' | 'sugerencias' | 'exportar'>('gerencia');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [hourlyRate, setHourlyRate] = useState<number>(45);
+  const [hourlyRate, setHourlyRate] = useState<number>(TARIFA_HORA_USD);
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [completedTasks, setCompletedTasks] = useState<Record<string, boolean>>({});
   const [collapsedHitos, setCollapsedHitos] = useState<Record<string, boolean>>({});
 
   // Compute metrics
   const totalHours = proposal.horas_totales_validadas || 0;
-  const estimatedSprints = Math.max(1, Math.ceil(totalHours / 40));
-  const estimatedCost = totalHours * hourlyRate;
+  const estimatedSprints = calcularSprints(totalHours, CAPACIDAD_SEMANAL_HORAS);
+  const estimatedCost = calcularCosto(totalHours, hourlyRate);
+  const ajustesRecalculo = describirRecalculo(totalHours, CAPACIDAD_SEMANAL_HORAS, hourlyRate);
 
   // Extract all unique roles
   const rolesSet = new Set<string>();
@@ -165,6 +174,10 @@ export const ProposalDashboard: React.FC<ProposalDashboardProps> = ({ proposal, 
         </div>
       </div>
 
+      {!isStakeholderView && (
+        <RecalculationNotice ajustes={ajustesRecalculo} proyecto={proposal.metadata?.proyecto} />
+      )}
+
       {/* Top Metrics & Cards (only shown on non-gerencia tabs) */}
       {activeTab !== 'gerencia' && (
         <>
@@ -200,7 +213,7 @@ export const ProposalDashboard: React.FC<ProposalDashboardProps> = ({ proposal, 
             <span className="text-xs font-medium text-slate-500">sprints (~2 sem c/u)</span>
           </div>
           <p className="text-[11px] text-slate-400 mt-1">
-            Calculado a 40h capacidad/semana
+            {CAPACIDAD_SEMANAL_HORAS}h capacidad/semana · {CAPACIDAD_SEMANAL_HORAS * 2}h por sprint
           </p>
         </div>
 
@@ -224,7 +237,8 @@ export const ProposalDashboard: React.FC<ProposalDashboardProps> = ({ proposal, 
               className="text-[11px] font-semibold text-slate-700 bg-slate-100 rounded px-1.5 py-0.5 border border-slate-200 cursor-pointer"
             >
               <option value={30}>$30/h</option>
-              <option value={45}>$45/h (Estándar)</option>
+              <option value={35}>$35/h (Estándar)</option>
+              <option value={45}>$45/h</option>
               <option value={60}>$60/h</option>
               <option value={80}>$80/h (Senior)</option>
               <option value={100}>$100/h</option>

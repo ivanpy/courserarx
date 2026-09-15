@@ -2,6 +2,12 @@ import React, { useState, useMemo } from 'react';
 import { ProposalResult } from '../types';
 import { exportHitosXlsx, exportHitosCsv, downloadJsonFile } from '../utils/helpers';
 import {
+  CAPACIDAD_SEMANAL_HORAS,
+  calcularSemanasHabiles,
+  calcularSprints,
+  calcularCosto
+} from '../domain/planning';
+import {
   Briefcase,
   Calendar,
   Clock,
@@ -42,18 +48,18 @@ export const ExecutiveManagementPanel: React.FC<ExecutiveManagementPanelProps> =
   }, []);
 
   const [startDateStr, setStartDateStr] = useState<string>(todayStr);
-  const [teamCapacityWeekly, setTeamCapacityWeekly] = useState<number>(40); // 40h/week = 1 FTE, 80h = 2 FTEs
+  const [teamCapacityWeekly, setTeamCapacityWeekly] = useState<number>(CAPACIDAD_SEMANAL_HORAS);
   const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
 
   // Core metrics
   const totalHours = proposal.horas_totales_validadas || 0;
   const totalHitos = proposal.hitos?.length || 0;
   const totalTasks = proposal.hitos?.reduce((acc, h) => acc + (h.tareas?.length || 0), 0) || 0;
-  const estimatedCost = totalHours * hourlyRate;
+  const estimatedCost = calcularCosto(totalHours, hourlyRate);
 
   // Duration in working weeks
-  const workingWeeks = Math.max(1, Math.ceil(totalHours / teamCapacityWeekly));
-  const estimatedSprints = Math.max(1, Math.ceil(workingWeeks / 2)); // 2-week sprints
+  const workingWeeks = calcularSemanasHabiles(totalHours, teamCapacityWeekly);
+  const estimatedSprints = calcularSprints(totalHours, teamCapacityWeekly);
 
   // Role Breakdown
   const roleMetrics = useMemo(() => {
@@ -373,7 +379,8 @@ ${roleMetrics.map(r => `- **${r.role}:** ${r.hours}h (${r.percentage.toFixed(1)}
               className="bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 font-semibold text-slate-800 text-[11px] cursor-pointer"
             >
               <option value={30}>$30/h</option>
-              <option value={45}>$45/h (Estándar)</option>
+              <option value={35}>$35/h (Estándar)</option>
+              <option value={45}>$45/h</option>
               <option value={60}>$60/h</option>
               <option value={80}>$80/h (Senior)</option>
               <option value={100}>$100/h</option>

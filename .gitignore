@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Configuración local de Claude Code (por máquina, no del proyecto)
+.claude/settings.local.json
