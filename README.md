@@ -617,7 +617,7 @@ Generada **en servidor** por `lib/export/xlsx.ts` con `write-excel-file/node` y 
 | **1 — Motor al servidor** ✅ | Estallar `server.ts` en `lib/engine/*`. `app/api/motor/route.ts`. `errors.ts` corta la fuga de stack. `guardrails.ts` nuevo. | D-05, D-09, D-11 | Paridad funcional; la respuesta de error no contiene stack ni internals |
 | **2 — Cierre de frontera** ✅ | `import 'server-only'`. Mover prompt y fixture. Borrar `geminiService.ts` y la cascada cliente. DTO `ModeloPublico`. | D-01, D-02, D-03, D-04, D-08, D-12 | `grep` del prompt y de `topK` sobre `.next/static/**` da **cero** |
 | **3 — Resiliencia** ✅ | RES-01…10: clasificación de errores, backoff, `AbortController`, circuit breaker, telemetría. | D-06, D-07, D-10 | Una clave inválida produce 1 intento, no 7; JSON truncado no devuelve 500 |
-| **4 — Dominio unificado** | `lib/domain/*`: colapsar los 5 `reduce`, las 3 agregaciones por rol, los 2 slugs; decidir la fórmula de sprint. | — | `calcularMetricas` reproduce los números del panel ejecutivo |
+| **4 — Dominio unificado** ✅ | `lib/domain/*`: colapsar los 5 `reduce`, las 3 agregaciones por rol, los 2 slugs; decidir la fórmula de sprint. | — | `calcularMetricas` reproduce los números del panel ejecutivo |
 | **5 — Route groups y auth** | `middleware.ts`, `lib/auth/*`, `assertAdmin()`, regla ESLint de frontera. | D-13 | Ningún componente admin es alcanzable desde `(stakeholder)` |
 | **6 — Persistencia** | `db/0001_init.sql`, `lib/db/*`, Server Actions de escritura. | — | Una propuesta se guarda y recupera íntegra (11 tablas, CASCADE); editar una tarifa no altera propuestas ya guardadas |
 | **7 — UI Admin** | `(admin)/tpm/**`. `PromptEditor` y `ModelProfileSelector` sobre Server Actions. | — | Flujo completo sin `/api/analyze` legacy |
@@ -820,6 +820,62 @@ resuelven con `httpOptions.timeout` (calculado como `min(tope por intento, presu
 restante)` en cada llamada). Activa el `AbortSignal` interno del SDK y produce
 `RequestTimeoutError` de forma confiable — mismo resultado funcional, menos código, y una
 clasificación de error más precisa que reconstruir el mecanismo a mano.
+
+### 14.5 Alcance real de la Fase 4
+
+**Hallazgo previo al inicio de la fase:** la fórmula de sprint y la tarifa por defecto ya
+habían sido corregidas por un commit anterior (`a5d2731`, previo incluso a la Fase 0), que
+introdujo `src/domain/planning.ts` como parche puntual. Esa ubicación no correspondía al
+árbol destino de §4.1 (`lib/domain/*` → `src/lib/domain/*` por el alias `@/*`), y dejaba sin
+resolver el resto de los duplicados de §4.4. Esta fase reemplaza ese archivo por la
+estructura completa y correcta, sin reabrir una decisión ya tomada.
+
+**Cerrado en esta fase:**
+
+- **Los 5 `reduce` de suma de horas** — [helpers.ts:140,214,282](src/utils/helpers.ts),
+  [ProposalDashboard.tsx:597](src/components/ProposalDashboard.tsx#L597) y
+  [ExecutiveManagementPanel.tsx:101](src/components/ExecutiveManagementPanel.tsx#L101) —
+  colapsan en `lib/domain/horas.ts` (`sumarHorasTareas`, `horasPorHito`, `contarTareas`).
+- **Las 3 agregaciones por rol** colapsan en `lib/domain/roles.ts`
+  (`agregarHorasPorRol`, `rolesUnicos`).
+- **El slug de proyecto**, en realidad repartido en **6 sitios** (no 2 como estimaba
+  originalmente esta sección: `helpers.ts` ×3, `ProposalDashboard.tsx` ×2 y
+  [App.tsx:212](src/App.tsx#L212), encontrado al auditar el código antes de tocarlo) —
+  colapsa en `lib/domain/slug.ts`. **Gana la variante robusta**
+  (`[^a-z0-9]+` → `_`, no solo espacios): un nombre de proyecto con `:` o `?` producía un
+  nombre de archivo inválido en Windows bajo la variante ingenua. Cambia el nombre de
+  archivo de las exportaciones JSON y del CSV de Jira; no cambia ninguna cifra mostrada.
+- **La fórmula de sprint y la tarifa por defecto**, decisión ya tomada en `a5d2731` y
+  ratificada acá: capacidad configurable ÷ 2 (no ÷40 fijo); `$35/h` (no `$45/h`).
+- **`cronograma.ts` recibe `startDate: Date` como parámetro**, sin `new Date()` interno.
+  `ExecutiveManagementPanel.tsx` sigue leyendo la fecha de un `<input type="date">`
+  controlado y la convierte antes de llamar al dominio; el `new Date()` que queda en el
+  componente solo siembra el valor por defecto de ese input, no participa del cálculo.
+- **`calcularMetricas()`** en `lib/domain/metricas.ts` orquesta horas + roles + sprints +
+  costos + cronograma + riesgo en un único DTO. `ExecutiveManagementPanel.tsx` ahora lo
+  llama una sola vez por render en lugar de sostener seis `useMemo` independientes;
+  verificado contra el caso Turnero en el navegador (Playwright/chrome-devtools): 50h,
+  3 hitos, $1750 USD, 2 semanas / 1 sprint, fechas de hito y agregación por rol coinciden
+  con lo calculado a mano a partir de las mismas fórmulas.
+- Efecto colateral corregido: `~${teamCapacityWeekly / 40} FTE` en la minuta gerencial
+  usaba un `40` literal en vez de `CAPACIDAD_SEMANAL_HORAS`.
+
+**Deliberadamente fuera de esta fase:**
+
+- **`horas_totales_validadas` no se recalcula en el cliente.** Sigue siendo la cifra
+  autoritativa leída directamente de la propuesta (INV-02 ya la garantiza en
+  `lib/engine/parse.ts`, del lado del motor). El fixture `TURNERO_SAMPLE_DATA` declara
+  `horas_totales_validadas: 50` mientras la suma real de sus tareas da 56h — inconsistencia
+  preexistente del fixture, no introducida por esta fase ni corregida acá: excede el
+  alcance de "colapsar duplicados" y tocarla sin más contexto alteraría una cifra ya usada
+  como referencia en el benchmark de §13.
+- **`minuta.ts` y `riesgo.ts` como archivos separados del árbol destino de §4.1** — el
+  umbral de riesgo se extrajo a `lib/domain/riesgo.ts` (se usa en `calcularMetricas`), pero
+  la generación de texto de la minuta gerencial (`handleCopyExecutiveMemo`) se deja en el
+  componente: es formato de presentación para un botón "copiar", no aritmética de negocio,
+  y construirlo ahora sería anticipar la Fase 7/8 sin un consumidor real todavía.
+- **No se tocó `src/app/**`** — Fase 4 no construye UI Next; `lib/domain/*` queda listo
+  para que las Fases 7-8 lo consuman desde Server Components.
 
 ---
 

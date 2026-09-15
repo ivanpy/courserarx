@@ -1,26 +1,6 @@
-/**
- * Fuente única de los parámetros de planificación y costo.
- * Regla estricta: .claude/rules/business-rules.md §1.
- */
-
-export const TARIFA_HORA_USD = 35;
-export const CAPACIDAD_SEMANAL_HORAS = 40;
-export const SEMANAS_POR_SPRINT = 2;
-
-/** Configuración vigente antes de la unificación, usada solo para explicar el recálculo al TPM. */
-export const TARIFA_HORA_USD_ANTERIOR = 45;
-
-export const horasPorSprint = (capacidadSemanal: number): number =>
-  capacidadSemanal * SEMANAS_POR_SPRINT;
-
-export const calcularSemanasHabiles = (totalHoras: number, capacidadSemanal: number): number =>
-  Math.max(1, Math.ceil(totalHoras / capacidadSemanal));
-
-export const calcularSprints = (totalHoras: number, capacidadSemanal: number): number =>
-  Math.max(1, Math.ceil(totalHoras / horasPorSprint(capacidadSemanal)));
-
-export const calcularCosto = (totalHoras: number, tarifaHora: number): number =>
-  totalHoras * tarifaHora;
+import { TARIFA_HORA_USD, TARIFA_HORA_USD_ANTERIOR } from './constants';
+import { calcularSprints } from './sprints';
+import { calcularCosto } from './costos';
 
 export interface AjusteRecalculo {
   concepto: string;
@@ -30,8 +10,8 @@ export interface AjusteRecalculo {
 }
 
 /**
- * Compara la cifra que habría producido la configuración anterior contra la vigente.
- * Devuelve solo los conceptos cuyo valor cambió de verdad para esta propuesta.
+ * Compara la cifra que habría producido la configuración anterior a la Fase 4 contra
+ * la vigente. Devuelve solo los conceptos cuyo valor cambió de verdad para esta propuesta.
  */
 export function describirRecalculo(
   totalHoras: number,
@@ -48,7 +28,7 @@ export function describirRecalculo(
       concepto: 'Sprints estimados',
       anterior: `${sprintsAnterior} ${sprintsAnterior === 1 ? 'sprint' : 'sprints'}`,
       actual: `${sprintsActual} ${sprintsActual === 1 ? 'sprint' : 'sprints'}`,
-      motivo: `Un sprint son ${SEMANAS_POR_SPRINT} semanas (${horasPorSprint(capacidadSemanal)}h a ${capacidadSemanal}h/sem), no una.`
+      motivo: `Un sprint son ${2} semanas (${capacidadSemanal * 2}h a ${capacidadSemanal}h/sem), no una.`
     });
   }
 

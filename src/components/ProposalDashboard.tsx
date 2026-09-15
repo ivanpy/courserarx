@@ -24,13 +24,13 @@ import { ProposalResult } from '../types';
 import { downloadJsonFile, exportHitosXlsx, exportHitosCsv, exportToJiraCsv, generateMarkdownExport } from '../utils/helpers';
 import { ExecutiveManagementPanel } from './ExecutiveManagementPanel';
 import { RecalculationNotice } from './RecalculationNotice';
-import {
-  TARIFA_HORA_USD,
-  CAPACIDAD_SEMANAL_HORAS,
-  calcularSprints,
-  calcularCosto,
-  describirRecalculo
-} from '../domain/planning';
+import { TARIFA_HORA_USD, CAPACIDAD_SEMANAL_HORAS } from '../lib/domain/constants';
+import { calcularSprints } from '../lib/domain/sprints';
+import { calcularCosto } from '../lib/domain/costos';
+import { describirRecalculo } from '../lib/domain/recalculo';
+import { horasPorHito } from '../lib/domain/horas';
+import { agregarHorasPorRol } from '../lib/domain/roles';
+import { proyectoSlug } from '../lib/domain/slug';
 
 interface ProposalDashboardProps {
   proposal: ProposalResult;
@@ -52,17 +52,10 @@ export const ProposalDashboard: React.FC<ProposalDashboardProps> = ({ proposal, 
   const estimatedCost = calcularCosto(totalHours, hourlyRate);
   const ajustesRecalculo = describirRecalculo(totalHours, CAPACIDAD_SEMANAL_HORAS, hourlyRate);
 
-  // Extract all unique roles
-  const rolesSet = new Set<string>();
-  const roleHoursMap: Record<string, number> = {};
-  proposal.hitos?.forEach(hito => {
-    hito.tareas?.forEach(t => {
-      const r = t.rol || 'Fullstack';
-      rolesSet.add(r);
-      roleHoursMap[r] = (roleHoursMap[r] || 0) + (Number(t.horas) || 0);
-    });
-  });
-  const availableRoles = Array.from(rolesSet);
+  // Extract all unique roles with their aggregated hours
+  const rolesAgregados = agregarHorasPorRol(proposal.hitos);
+  const roleHoursMap: Record<string, number> = Object.fromEntries(rolesAgregados.map(r => [r.rol, r.horas]));
+  const availableRoles = rolesAgregados.map(r => r.rol);
 
   const toggleTaskCompletion = (taskKey: string) => {
     setCompletedTasks(prev => ({
@@ -156,7 +149,7 @@ export const ProposalDashboard: React.FC<ProposalDashboardProps> = ({ proposal, 
               type="button"
               id="btn-download-json-header"
               onClick={() => {
-                const slug = (proposal.metadata?.proyecto || 'backlog').toLowerCase().replace(/\s+/g, '_');
+                const slug = proyectoSlug(proposal.metadata?.proyecto, 'backlog');
                 downloadJsonFile(proposal, `propuesta_${slug}.json`);
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-xs transition-colors cursor-pointer"
@@ -594,7 +587,7 @@ export const ProposalDashboard: React.FC<ProposalDashboardProps> = ({ proposal, 
             <div className="space-y-4">
               {filteredHitos.map((hito, hIdx) => {
                 const isCollapsed = collapsedHitos[hito.nombre_meta];
-                const hitoHours = hito.tareas.reduce((sum, t) => sum + (Number(t.horas) || 0), 0);
+                const hitoHours = horasPorHito(hito);
                 const hitoCompletedCount = hito.tareas.filter((t, i) => completedTasks[`${hIdx}-${i}`]).length;
 
                 return (
@@ -884,7 +877,7 @@ export const ProposalDashboard: React.FC<ProposalDashboardProps> = ({ proposal, 
                 type="button"
                 id="btn-export-json-card"
                 onClick={() => {
-                  const slug = (proposal.metadata?.proyecto || 'backlog').toLowerCase().replace(/\s+/g, '_');
+                  const slug = proyectoSlug(proposal.metadata?.proyecto, 'backlog');
                   downloadJsonFile(proposal, `propuesta_${slug}.json`);
                 }}
                 className="p-4 rounded-xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/20 text-left transition-all cursor-pointer flex flex-col justify-between space-y-2 group bg-white shadow-xs"
