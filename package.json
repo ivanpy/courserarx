@@ -11,7 +11,8 @@
     "start": "next start",
     "start:legacy": "node --conditions=react-server dist/server.cjs",
     "clean": "rm -rf dist .next server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "lint:boundary": "eslint src"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -35,8 +36,10 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@typescript-eslint/parser": "^8.70.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "eslint": "^10.10.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
