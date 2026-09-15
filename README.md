@@ -167,7 +167,7 @@ courserarx/
 │
 ├── next.config.ts                        # ⚙️  serverExternalPackages: ['@google/genai','write-excel-file']
 ├── postcss.config.mjs                    # ⚙️  { '@tailwindcss/postcss': {} }
-├── tsconfig.json                         # ⚙️  jsx:'preserve', strict:true, @/*→./src/*
+├── tsconfig.json                         # ⚙️  jsx:'react-jsx', strict:true, @/*→./src/*
 ├── eslint.config.mjs                     # ⚙️  no-restricted-imports (frontera admin/stakeholder)
 ├── .env.local                            # 🔒 NUNCA commit — único lugar con secretos reales
 │
@@ -613,9 +613,9 @@ Generada **en servidor** por `lib/export/xlsx.ts` con `write-excel-file/node` y 
 
 | Fase | Contenido | Cierra | Criterio de salida |
 |---|---|---|---|
-| **0 — Andamiaje** 🚧 | `next.config.ts`, `postcss.config.mjs`, `tsconfig.json` con `strict`, `app/layout.tsx`. Vite y Express siguen vivos en paralelo. | D-14 | `npm run build` compila con Tailwind aplicado |
-| **1 — Motor al servidor** 🚧 | Estallar `server.ts` en `lib/engine/*`. `app/api/motor/route.ts`. `errors.ts` corta la fuga de stack. `guardrails.ts` nuevo. | D-05, D-09, D-11 | Paridad funcional; la respuesta de error no contiene stack ni internals |
-| **2 — Cierre de frontera** 🚧 | `import 'server-only'`. Mover prompt y fixture. Borrar `geminiService.ts` y la cascada cliente. DTO `ModeloPublico`. | D-01, D-02, D-03, D-04, D-08, D-12 | `grep` del prompt y de `topK` sobre `.next/static/**` da **cero** |
+| **0 — Andamiaje** ✅ | `next.config.ts`, `postcss.config.mjs`, `tsconfig.json` con `strict`, `app/layout.tsx`. Vite y Express siguen vivos en paralelo. | D-14 | `npm run build` compila con Tailwind aplicado |
+| **1 — Motor al servidor** ✅ | Estallar `server.ts` en `lib/engine/*`. `app/api/motor/route.ts`. `errors.ts` corta la fuga de stack. `guardrails.ts` nuevo. | D-05, D-09, D-11 | Paridad funcional; la respuesta de error no contiene stack ni internals |
+| **2 — Cierre de frontera** ✅ | `import 'server-only'`. Mover prompt y fixture. Borrar `geminiService.ts` y la cascada cliente. DTO `ModeloPublico`. | D-01, D-02, D-03, D-04, D-08, D-12 | `grep` del prompt y de `topK` sobre `.next/static/**` da **cero** |
 | **3 — Resiliencia** | RES-01…10: clasificación de errores, backoff, `AbortController`, circuit breaker, telemetría. | D-06, D-07, D-10 | Una clave inválida produce 1 intento, no 7; JSON truncado no devuelve 500 |
 | **4 — Dominio unificado** | `lib/domain/*`: colapsar los 5 `reduce`, las 3 agregaciones por rol, los 2 slugs; decidir la fórmula de sprint. | — | `calcularMetricas` reproduce los números del panel ejecutivo |
 | **5 — Route groups y auth** | `middleware.ts`, `lib/auth/*`, `assertAdmin()`, regla ESLint de frontera. | D-13 | Ningún componente admin es alcanzable desde `(stakeholder)` |
@@ -626,6 +626,137 @@ Generada **en servidor** por `lib/export/xlsx.ts` con `write-excel-file/node` y 
 | **10 — CLI y demolición** | `cli/*` con `--conditions react-server`. Borrar `server.ts`, `main.tsx`, `index.html`, `vite.config.ts`, `App.tsx`, `services/`, `helpers.ts`. | — | `npm run cli benchmark` en verde; `package-lock.json` sin express/vite/tsx |
 
 🚧 = bloqueante de cualquier despliegue accesible en red.
+
+### 14.1 Convivencia de scripts durante las fases 0–9
+
+Mientras los dos árboles coexisten, `npm run build` y `npm start` apuntan al monolito
+Next.js; el árbol Vite + Express conserva sus propios comandos con sufijo `:legacy`.
+`npm run dev` sigue siendo **el legacy** a propósito, porque es donde queda la UI
+funcional hasta la Fase 7.
+
+| Script | Destino |
+|---|---|
+| `npm run dev` | Vite + Express legacy — puerto 3000 |
+| `npm run dev:next` | Next.js — puerto 3001, para no chocar con el anterior |
+| `npm run build` / `npm start` | Next.js |
+| `npm run build:legacy` / `npm run start:legacy` | Vite + esbuild → `dist/server.cjs` |
+| `npm run lint` | `tsc --noEmit` sobre **todo** el repo, ya en modo `strict` |
+
+Tres detalles no obvios del andamiaje:
+
+- **`jsx` no puede ser `preserve`.** Next 16 compila con Turbopack y reescribe el
+  `tsconfig.json` a `react-jsx` en cada build. No es negociable desde la config.
+- **Tailwind corre por dos pipelines distintos.** Next usa `postcss.config.mjs`; el
+  árbol legacy usa el plugin `@tailwindcss/vite`. Para que Vite no cargue la config
+  PostCSS del raíz y procese Tailwind dos veces, `vite.config.ts` fija una config
+  PostCSS vacía inline. Ambos pipelines desaparecen en la Fase 10.
+- **`src/services/` queda fuera de `tsconfig.json`.** Es código muerto, pero contiene el
+  `proposalResponseSchema` que la Fase 2 debe rescatar; excluirlo evita que su único
+  error en `strict` bloquee el build sin tener que borrarlo antes de tiempo.
+
+### 14.2 Alcance real de la Fase 1
+
+`server.ts` pasó de 434 a ~70 líneas: toda la lógica de negocio vive ahora en
+`src/lib/engine/*` (contracts, ingest, sanitize, guardrails, system-instruction, prompt,
+models, response-schema, inference, parse, errors, telemetry, index). Express y
+`app/api/motor/route.ts` son **el mismo adaptador fino** llamando a `ejecutarMotor()` —
+"tres puertas, una implementación" (§12) empieza a cumplirse desde ahora, no recién en la
+Fase 5.
+
+**Cerrado en esta fase:**
+
+- **D-05** — VAL-04 (vallado con nonce) y VAL-06 (neutralización de frases de override) en
+  `guardrails.ts`; VAL-05 (saneamiento de SVG: `<script>`, `on*`, `javascript:`,
+  comentarios XML, `href` externos en `<use>`) en `sanitize.ts`, necesario para que el
+  vallado tenga sentido — no alcanza con delimitar un SVG que todavía trae un `<script>`
+  intacto adentro.
+- **D-09** — `MotorError`/`toPublic()` en `errors.ts`. La respuesta de error ya no incluye
+  `stack`, `rawMessage` ni `triedModels`; en su lugar viaja un `requestId` (UUID) que
+  correlaciona con el log estructurado de `telemetry.ts`.
+- **D-11** — `/api/health` (Express y `app/api/health/route.ts`) dejó de exponer
+  `hasGeminiKey`. La autenticación real del endpoint es la Fase 5; por ahora se cerró la
+  fuga en sí, no el control de acceso.
+
+**Deliberadamente fuera de esta fase** (para no construir sobre una frontera a medio
+cerrar):
+
+- **D-01, D-02, D-03, D-12** siguen abiertos. `MotorInputSchema` sigue aceptando
+  `systemInstructions`, `model` y `temperature` del cliente — reemplazarlos por
+  `promptProfileId` + `modeloId` (enum) es la Fase 2, y depende de sesión de Admin y de la
+  tabla `proyectos` que todavía no existen.
+- **RES-01, RES-02, RES-05, RES-09** (clasificación reintentable vs. terminal, backoff,
+  preservar el error del modelo solicitado, clasificar por error tipado del SDK) quedan
+  con el comportamiento de hoy, marcado con `TODO(Fase 3 · RES-xx)` en `inference.ts`: se
+  sigue capturando toda excepción sin discriminar y sobrescribiendo `lastModelError` en
+  cada vuelta del fallback.
+- **`import 'server-only'`** no se agregó a `lib/engine/*` todavía. Agregarlo ahora
+  rompería `npm run dev`: `tsx server.ts` no declara la condición de exportación
+  `react-server`, y fuera de esa condición el paquete lanza al importarse — el mismo
+  gotcha operativo que ya documenta §12.1 para el CLI. Es entrega explícita de la Fase 2.
+
+**Una desviación de "paridad funcional" literal, intencional:** el saneamiento de SVG
+(VAL-05) valida imágenes rasterizadas por magic bytes reales en vez de confiar en el
+`mimeType` declarado por el cliente. Antes, un blob que "parecía" base64 se aceptaba como
+`image/png` por defecto sin más chequeo; ahora se descarta si sus bytes no corresponden a
+ningún formato soportado. Una imagen real llega igual (y mejor: ya no se le fuerza un
+`mimeType` incorrecto), pero basura que antes se colaba como imagen ahora no.
+
+### 14.3 Alcance real de la Fase 2
+
+El criterio de salida literal ("`grep` del prompt y de `topK` sobre `.next/static/**` da
+cero") ya era trivialmente cierto antes de esta fase: la UI vulnerable vive en el árbol
+Vite legacy (`src/App.tsx`, `src/components/*`), no en `src/app/**`, así que el bundle de
+Next nunca la contuvo. El cierre real de esta fase no fue ese grep — fue arreglar la
+vulnerabilidad en el código que **sí** se está ejecutando hoy: el cliente legacy y el
+adaptador Express que ambos siguen usando.
+
+**Cerrado en esta fase:**
+
+- **D-01 y D-12** — `systemInstructions` desapareció del schema de `contracts.ts`
+  (`.strict()` la rechaza si llega) y del estado de `App.tsx`. `SystemInstructionsModal`
+  pasó de textarea editable + botón "Copiar para AI Studio" a panel de solo lectura.
+  Verificado en runtime: `POST /api/analyze` con `systemInstructions` en el body devuelve
+  **400 `Unrecognized key`**, no una ejecución silenciosa con el valor ignorado.
+- **D-02** — `model` pasó de `string` libre a `z.enum(MODELOS_PERMITIDOS)`
+  (`models.ts`). Verificado: un modelo inventado devuelve 400 `Invalid option`.
+- **D-03** — `temperature` acotada a `[0, 0.4]` en el schema. Verificado: `0.9` devuelve
+  400 `Too big`. El slider de `ModelSettingsModal` bajó su tope de UI de 1.0 a 0.4 para no
+  mostrar un rango que el servidor iba a rechazar.
+- **D-04** — `src/services/geminiService.ts` eliminado (su `proposalResponseSchema` ya
+  estaba rescatado en `response-schema.ts` desde la Fase 1).
+- **D-08** — la cascada de reintento cliente en `App.tsx` (cambiar de modelo y refetch
+  ante 429/503) se eliminó. Era resiliencia duplicada: el servidor ya agota su propia
+  cascada de fallback en una sola petición.
+- **DTO `ModeloPublico`** — nuevo endpoint `GET /api/modelos` (Express y
+  `app/api/modelos/route.ts`) sirve `{id, etiqueta, disponible}[]`. `ModelSettingsModal`
+  ya no tiene un `<select>` hardcodeado ni el bloque "Top K: 40 / Top P: 0.95": esos
+  parámetros no tienen representación en el cliente.
+
+**El gotcha real de la fase — `import 'server-only'` en `lib/engine/*`:** el paquete
+resuelve su `package.json#exports` a un archivo que **lanza** salvo bajo la condición
+`react-server`, y esa condición la activa un bundler (Next) o un flag explícito — nunca
+sola. `tsx server.ts` sin flag rompía inmediatamente. La activación es enteramente de
+**runtime**, no de build: `esbuild --packages=external` deja `server-only` como `require`
+externo sin resolver (verificado leyendo el `dist/server.cjs` generado), así que
+`build:legacy` no necesitó ningún cambio — solo los scripts que **ejecutan** el resultado:
+
+```jsonc
+"dev": "tsx --conditions=react-server server.ts",
+"start:legacy": "node --conditions=react-server dist/server.cjs"
+```
+
+**Deliberadamente fuera de esta fase:**
+
+- **`promptProfileId`/DTO real de perfiles de prompt** — VAL-02 final (resolver el texto
+  desde `proyectos.system_instructions` en DB, autorizado por sesión Admin) necesita la
+  Fase 5 (auth) y la Fase 6 (DB), que no existen. Lo que se cerró ya, sin esa
+  infraestructura, es la vulnerabilidad: ningún caller puede alterar Master Truth ni Scope
+  Isolation, aunque la *edición* de un prompt personalizado por proyecto no vuelve hasta
+  la Fase 7.
+- **Mover el fixture Turnero server-side** — el bullet de fase dice "mover prompt y
+  fixture", pero ninguna deuda D-01..D-12 depende de dónde vive `TURNERO_SAMPLE_DATA`: es
+  contenido de demo, no la vulnerabilidad. Se relocaliza cuando el CLI `benchmark` (§12,
+  Fase 9/10) lo necesite como fuente compartida con la UI.
 
 ---
 

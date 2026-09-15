@@ -6,6 +6,10 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    // El raíz ya tiene un postcss.config.mjs para Next. Vite lo cargaría solo y
+    // procesaría Tailwind dos veces (plugin + PostCSS). Esta config vacía inline
+    // deja el pipeline legacy exactamente como estaba. Se va con la Fase 10.
+    css: {postcss: {plugins: []}},
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

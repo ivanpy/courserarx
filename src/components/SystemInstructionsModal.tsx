@@ -1,33 +1,24 @@
-import React, { useState } from 'react';
-import { X, BookOpen, Copy, Check, CheckCircle2 } from 'lucide-react';
-import { DEFAULT_SYSTEM_INSTRUCTIONS } from '../data/defaults';
+import React from 'react';
+import { X, BookOpen, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 interface SystemInstructionsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  systemInstructions: string;
-  setSystemInstructions: (val: string) => void;
 }
 
+// Fase 2 (cierra D-01, D-12): este modal dejó de ser un editor sobre el
+// prompt maestro. Antes exponía una textarea con el texto completo de
+// DEFAULT_SYSTEM_INSTRUCTIONS y lo enviaba tal cual al servidor en cada
+// análisis — cualquiera podía reemplazar Master Truth y Scope Isolation.
+// El prompt real ahora vive solo en src/lib/engine/system-instruction.ts
+// (server-only); esto es únicamente informativo. Una UI para que el TPM
+// configure perfiles de prompt por proyecto vuelve en la Fase 7, sobre
+// Server Actions con sesión de Admin.
 export const SystemInstructionsModal: React.FC<SystemInstructionsModalProps> = ({
   isOpen,
-  onClose,
-  systemInstructions,
-  setSystemInstructions
+  onClose
 }) => {
-  const [copied, setCopied] = useState(false);
-
   if (!isOpen) return null;
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(systemInstructions);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleReset = () => {
-    setSystemInstructions(DEFAULT_SYSTEM_INSTRUCTIONS);
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
@@ -40,10 +31,10 @@ export const SystemInstructionsModal: React.FC<SystemInstructionsModalProps> = (
             </div>
             <div>
               <h3 className="text-sm sm:text-base font-bold text-slate-900">
-                1. Instrucciones del Sistema (System Instructions)
+                Reglas del Senior TPM (Solo Lectura)
               </h3>
               <p className="text-xs text-slate-500">
-                Reglas aplicadas por el Senior TPM y Arquitecto Fullstack
+                Aplicadas por el servidor en cada análisis
               </p>
             </div>
           </div>
@@ -58,7 +49,6 @@ export const SystemInstructionsModal: React.FC<SystemInstructionsModalProps> = (
 
         {/* Modal Content */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
-          {/* Rules Summary Card */}
           <div className="grid sm:grid-cols-2 gap-2 text-xs">
             <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl space-y-1">
               <div className="font-bold text-blue-900 flex items-center gap-1.5">
@@ -98,45 +88,25 @@ export const SystemInstructionsModal: React.FC<SystemInstructionsModalProps> = (
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-              Prompt del Sistema Activo (Personalizable)
-            </label>
-            <textarea
-              rows={10}
-              value={systemInstructions}
-              onChange={e => setSystemInstructions(e.target.value)}
-              className="w-full p-3 rounded-xl border border-slate-200 text-xs font-mono bg-slate-50 text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-            />
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2.5 text-xs text-slate-600">
+            <ShieldCheck className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+            <p>
+              Estas reglas se aplican íntegramente en el servidor y no son configurables desde el
+              navegador. La edición de perfiles de prompt por proyecto es una función de
+              Administración que llega en una fase posterior de la migración.
+            </p>
           </div>
         </div>
 
         {/* Modal Footer */}
-        <div className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between">
+        <div className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end">
           <button
             type="button"
-            onClick={handleReset}
-            className="text-xs text-slate-500 hover:text-rose-600 cursor-pointer"
+            onClick={onClose}
+            className="px-4 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 cursor-pointer"
           >
-            Restaurar Original
+            Listo
           </button>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-white flex items-center gap-1.5 cursor-pointer"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copiado al portapapeles' : 'Copiar para AI Studio'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 cursor-pointer"
-            >
-              Listo
-            </button>
-          </div>
         </div>
       </div>
     </div>
