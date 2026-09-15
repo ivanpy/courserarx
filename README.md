@@ -614,7 +614,7 @@ Generada **en servidor** por `lib/export/xlsx.ts` con `write-excel-file/node` y 
 | Fase | Contenido | Cierra | Criterio de salida |
 |---|---|---|---|
 | **0 — Andamiaje** ✅ | `next.config.ts`, `postcss.config.mjs`, `tsconfig.json` con `strict`, `app/layout.tsx`. Vite y Express siguen vivos en paralelo. | D-14 | `npm run build` compila con Tailwind aplicado |
-| **1 — Motor al servidor** 🚧 | Estallar `server.ts` en `lib/engine/*`. `app/api/motor/route.ts`. `errors.ts` corta la fuga de stack. `guardrails.ts` nuevo. | D-05, D-09, D-11 | Paridad funcional; la respuesta de error no contiene stack ni internals |
+| **1 — Motor al servidor** ✅ | Estallar `server.ts` en `lib/engine/*`. `app/api/motor/route.ts`. `errors.ts` corta la fuga de stack. `guardrails.ts` nuevo. | D-05, D-09, D-11 | Paridad funcional; la respuesta de error no contiene stack ni internals |
 | **2 — Cierre de frontera** 🚧 | `import 'server-only'`. Mover prompt y fixture. Borrar `geminiService.ts` y la cascada cliente. DTO `ModeloPublico`. | D-01, D-02, D-03, D-04, D-08, D-12 | `grep` del prompt y de `topK` sobre `.next/static/**` da **cero** |
 | **3 — Resiliencia** | RES-01…10: clasificación de errores, backoff, `AbortController`, circuit breaker, telemetría. | D-06, D-07, D-10 | Una clave inválida produce 1 intento, no 7; JSON truncado no devuelve 500 |
 | **4 — Dominio unificado** | `lib/domain/*`: colapsar los 5 `reduce`, las 3 agregaciones por rol, los 2 slugs; decidir la fórmula de sprint. | — | `calcularMetricas` reproduce los números del panel ejecutivo |
@@ -653,6 +653,53 @@ Tres detalles no obvios del andamiaje:
 - **`src/services/` queda fuera de `tsconfig.json`.** Es código muerto, pero contiene el
   `proposalResponseSchema` que la Fase 2 debe rescatar; excluirlo evita que su único
   error en `strict` bloquee el build sin tener que borrarlo antes de tiempo.
+
+### 14.2 Alcance real de la Fase 1
+
+`server.ts` pasó de 434 a ~70 líneas: toda la lógica de negocio vive ahora en
+`src/lib/engine/*` (contracts, ingest, sanitize, guardrails, system-instruction, prompt,
+models, response-schema, inference, parse, errors, telemetry, index). Express y
+`app/api/motor/route.ts` son **el mismo adaptador fino** llamando a `ejecutarMotor()` —
+"tres puertas, una implementación" (§12) empieza a cumplirse desde ahora, no recién en la
+Fase 5.
+
+**Cerrado en esta fase:**
+
+- **D-05** — VAL-04 (vallado con nonce) y VAL-06 (neutralización de frases de override) en
+  `guardrails.ts`; VAL-05 (saneamiento de SVG: `<script>`, `on*`, `javascript:`,
+  comentarios XML, `href` externos en `<use>`) en `sanitize.ts`, necesario para que el
+  vallado tenga sentido — no alcanza con delimitar un SVG que todavía trae un `<script>`
+  intacto adentro.
+- **D-09** — `MotorError`/`toPublic()` en `errors.ts`. La respuesta de error ya no incluye
+  `stack`, `rawMessage` ni `triedModels`; en su lugar viaja un `requestId` (UUID) que
+  correlaciona con el log estructurado de `telemetry.ts`.
+- **D-11** — `/api/health` (Express y `app/api/health/route.ts`) dejó de exponer
+  `hasGeminiKey`. La autenticación real del endpoint es la Fase 5; por ahora se cerró la
+  fuga en sí, no el control de acceso.
+
+**Deliberadamente fuera de esta fase** (para no construir sobre una frontera a medio
+cerrar):
+
+- **D-01, D-02, D-03, D-12** siguen abiertos. `MotorInputSchema` sigue aceptando
+  `systemInstructions`, `model` y `temperature` del cliente — reemplazarlos por
+  `promptProfileId` + `modeloId` (enum) es la Fase 2, y depende de sesión de Admin y de la
+  tabla `proyectos` que todavía no existen.
+- **RES-01, RES-02, RES-05, RES-09** (clasificación reintentable vs. terminal, backoff,
+  preservar el error del modelo solicitado, clasificar por error tipado del SDK) quedan
+  con el comportamiento de hoy, marcado con `TODO(Fase 3 · RES-xx)` en `inference.ts`: se
+  sigue capturando toda excepción sin discriminar y sobrescribiendo `lastModelError` en
+  cada vuelta del fallback.
+- **`import 'server-only'`** no se agregó a `lib/engine/*` todavía. Agregarlo ahora
+  rompería `npm run dev`: `tsx server.ts` no declara la condición de exportación
+  `react-server`, y fuera de esa condición el paquete lanza al importarse — el mismo
+  gotcha operativo que ya documenta §12.1 para el CLI. Es entrega explícita de la Fase 2.
+
+**Una desviación de "paridad funcional" literal, intencional:** el saneamiento de SVG
+(VAL-05) valida imágenes rasterizadas por magic bytes reales en vez de confiar en el
+`mimeType` declarado por el cliente. Antes, un blob que "parecía" base64 se aceptaba como
+`image/png` por defecto sin más chequeo; ahora se descarta si sus bytes no corresponden a
+ningún formato soportado. Una imagen real llega igual (y mejor: ya no se le fuerza un
+`mimeType` incorrecto), pero basura que antes se colaba como imagen ahora no.
 
 ---
 
