@@ -89,3 +89,21 @@ export interface ModeloPublico {
   etiqueta: string;
   disponible: boolean;
 }
+
+// Copia cliente-segura de MotorErrorPublico (src/lib/engine/errors.ts, Fase 1
+// D-09/RES-08): mismo motivo que ModeloPublico arriba. Sin stack, sin
+// mensaje crudo del SDK, sin triedModels — eso nunca sale del servidor.
+export type MotorErrorType =
+  | 'VALIDATION_ERROR'
+  | 'CONFIGURATION_ERROR'
+  | 'KNOWN_RATE_LIMIT_OR_DEMAND'
+  | 'TIMEOUT'
+  | 'UNHANDLED_ERROR';
+
+export interface MotorErrorPublico {
+  error: string;
+  errorType: MotorErrorType;
+  isRateLimitOrDemand: boolean;
+  requestId: string;
+  timestamp: string;
+}

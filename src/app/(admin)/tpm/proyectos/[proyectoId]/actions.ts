@@ -8,15 +8,14 @@ import { obtenerProyecto } from '@/lib/db/proyectos';
 import { obtenerAdjuntosSvg } from '@/lib/db/adjuntos';
 import { crearPropuestaParaProyecto } from '@/lib/db/propuestas';
 import { resolverAlerta } from '@/lib/db/alertas';
-import { ejecutarMotor } from '@/lib/engine';
+import { ejecutarMotor, MotorError, type MotorErrorPublico } from '@/lib/engine';
 
 const ReanalizarProyectoSchema = z.object({
   proyectoId: z.string().uuid(),
 });
 
-export interface PropuestaGenerada {
-  propuestaId: string;
-}
+/** Ver la misma nota en tpm/nuevo/actions.ts: MotorError nunca se relanza crudo. */
+export type ResultadoAnalisis = { ok: true; propuestaId: string } | { ok: false; error: MotorErrorPublico };
 
 /**
  * Limitación real, no un descuido (ver lib/db/adjuntos.ts): solo puede
@@ -25,7 +24,7 @@ export interface PropuestaGenerada {
  * punto porque nunca se guardaron — reanalizar un proyecto con imágenes
  * rasterizadas las pierde. Documentado, no oculto.
  */
-export async function reanalizarProyecto(payload: unknown): Promise<PropuestaGenerada> {
+export async function reanalizarProyecto(payload: unknown): Promise<ResultadoAnalisis> {
   await requireAdminSession();
   const { proyectoId } = ReanalizarProyectoSchema.parse(payload);
 
@@ -41,27 +40,35 @@ export async function reanalizarProyecto(payload: unknown): Promise<PropuestaGen
   const adjuntosSvg = await obtenerAdjuntosSvg(pool, proyectoId);
   const promptEfectivo = proyecto.systemInstructions ?? null;
 
-  const resultado = await ejecutarMotor(
-    {
-      projectName: proyecto.nombre,
-      notes: proyecto.descripcionNotas,
-      images: adjuntosSvg.map(a => ({
-        name: a.nombreArchivo,
-        mimeType: 'image/svg+xml',
-        base64Data: a.contenidoSvg,
-      })),
-      model: proyecto.modeloIa,
-      temperature: proyecto.temperatura,
-    },
-    { systemInstructionOverride: promptEfectivo }
-  );
+  let resultado;
+  try {
+    resultado = await ejecutarMotor(
+      {
+        projectName: proyecto.nombre,
+        notes: proyecto.descripcionNotas,
+        images: adjuntosSvg.map(a => ({
+          name: a.nombreArchivo,
+          mimeType: 'image/svg+xml',
+          base64Data: a.contenidoSvg,
+        })),
+        model: proyecto.modeloIa,
+        temperature: proyecto.temperatura,
+      },
+      { systemInstructionOverride: promptEfectivo }
+    );
+  } catch (err) {
+    if (err instanceof MotorError) {
+      return { ok: false, error: err.toPublic() };
+    }
+    throw err;
+  }
 
   const metadataConSnapshot = {
     ...resultado.metadata,
     promptUtilizado: promptEfectivo ?? '(default de system-instruction.ts)',
   };
 
-  return withTransaction(client =>
+  const { propuestaId } = await withTransaction(client =>
     crearPropuestaParaProyecto(
       client,
       proyectoId,
@@ -70,6 +77,7 @@ export async function reanalizarProyecto(payload: unknown): Promise<PropuestaGen
       metadataConSnapshot
     )
   );
+  return { ok: true, propuestaId };
 }
 
 const ResolverAlertaSchema = z.object({

@@ -7,7 +7,7 @@ import { getPool, withTransaction } from '@/lib/db/client';
 import { insertarProyecto, obtenerProyecto } from '@/lib/db/proyectos';
 import { insertarAdjuntos, type DatosAdjunto } from '@/lib/db/adjuntos';
 import { crearPropuestaParaProyecto } from '@/lib/db/propuestas';
-import { ejecutarMotor } from '@/lib/engine';
+import { ejecutarMotor, MotorError, type MotorErrorPublico } from '@/lib/engine';
 import { clasificarYSanearAdjunto } from '@/lib/engine/sanitize';
 
 const ImagenEntradaSchema = z.object({
@@ -83,9 +83,14 @@ const AnalizarProyectoSchema = z.object({
   images: z.array(ImagenEntradaSchema).max(8).default([]),
 });
 
-export interface PropuestaGenerada {
-  propuestaId: string;
-}
+/**
+ * `MotorError` (VALIDATION_ERROR, CONFIGURATION_ERROR, KNOWN_RATE_LIMIT_OR_DEMAND,
+ * TIMEOUT) NUNCA se relanza crudo: un `throw` dentro de una Server Action solo
+ * cruza al cliente como un digest genérico en producción (Next redacta el
+ * mensaje real). `toPublic()` ya existe exactamente para poder devolver el
+ * error como dato serializable — `ErrorReviewPanel` consume esta forma.
+ */
+export type ResultadoAnalisis = { ok: true; propuestaId: string } | { ok: false; error: MotorErrorPublico };
 
 /**
  * VAL-02 final: el cliente manda `proyectoId` (más las imágenes, que nunca
@@ -96,7 +101,7 @@ export interface PropuestaGenerada {
  * queda en `propuestas.metadata_json` para trazabilidad — nunca en
  * `MotorOutputMetadata` (eso lo vería el cliente de /api/motor, SEC-02).
  */
-export async function analizarProyecto(payload: unknown): Promise<PropuestaGenerada> {
+export async function analizarProyecto(payload: unknown): Promise<ResultadoAnalisis> {
   await requireAdminSession();
   const datos = AnalizarProyectoSchema.parse(payload);
 
@@ -107,23 +112,31 @@ export async function analizarProyecto(payload: unknown): Promise<PropuestaGener
 
   const promptEfectivo = proyecto.systemInstructions ?? null;
 
-  const resultado = await ejecutarMotor(
-    {
-      projectName: proyecto.nombre,
-      notes: datos.notes,
-      images: datos.images,
-      model: proyecto.modeloIa,
-      temperature: proyecto.temperatura,
-    },
-    { systemInstructionOverride: promptEfectivo }
-  );
+  let resultado;
+  try {
+    resultado = await ejecutarMotor(
+      {
+        projectName: proyecto.nombre,
+        notes: datos.notes,
+        images: datos.images,
+        model: proyecto.modeloIa,
+        temperature: proyecto.temperatura,
+      },
+      { systemInstructionOverride: promptEfectivo }
+    );
+  } catch (err) {
+    if (err instanceof MotorError) {
+      return { ok: false, error: err.toPublic() };
+    }
+    throw err;
+  }
 
   const metadataConSnapshot = {
     ...resultado.metadata,
     promptUtilizado: promptEfectivo ?? '(default de system-instruction.ts)',
   };
 
-  return withTransaction(client =>
+  const { propuestaId } = await withTransaction(client =>
     crearPropuestaParaProyecto(
       client,
       datos.proyectoId,
@@ -132,4 +145,5 @@ export async function analizarProyecto(payload: unknown): Promise<PropuestaGener
       metadataConSnapshot
     )
   );
+  return { ok: true, propuestaId };
 }

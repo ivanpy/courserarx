@@ -11,9 +11,33 @@ const GuardarPromptSchema = z.object({
   systemInstructions: z.string().trim().min(1).max(20_000),
 });
 
-/** Mantiene proyectos.system_instructions como el prompt actual editable (Resolución #2 de la Fase 7, sin tabla de versionado). */
-export async function guardarPrompt(payload: unknown): Promise<void> {
+export interface GuardarPromptState {
+  ok: boolean;
+  error: string | null;
+}
+
+/**
+ * README §árbol final: PromptEditor es "textarea NO controlada + <form
+ * action>" — el mismo patrón que LoginForm/loginAction. `proyectoId` llega
+ * pre-vinculado vía `guardarPrompt.bind(null, proyectoId)` en el cliente
+ * (convención de Next para pasar argumentos extra a una Server Action usada
+ * con useActionState); FormData trae solo el campo del textarea.
+ * Mantiene proyectos.system_instructions como el prompt actual editable
+ * (Resolución #2 de la Fase 7, sin tabla de versionado).
+ */
+export async function guardarPrompt(
+  proyectoId: string,
+  _prevState: GuardarPromptState,
+  formData: FormData
+): Promise<GuardarPromptState> {
   await requireAdminSession();
-  const datos = GuardarPromptSchema.parse(payload);
-  await withTransaction(client => actualizarPrompt(client, datos.proyectoId, datos.systemInstructions));
+  const parsed = GuardarPromptSchema.safeParse({
+    proyectoId,
+    systemInstructions: formData.get('systemInstructions'),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos.' };
+  }
+  await withTransaction(client => actualizarPrompt(client, parsed.data.proyectoId, parsed.data.systemInstructions));
+  return { ok: true, error: null };
 }
