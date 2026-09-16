@@ -37,3 +37,10 @@ export async function loginAction(_prevState: LoginState, formData: FormData): P
 
   redirect('/tpm');
 }
+
+/** Se usa como `<form action={logoutAction}>` (Server Component, sin JS de por medio). */
+export async function logoutAction(): Promise<void> {
+  const store = await cookies();
+  store.delete(ADMIN_SESSION_COOKIE);
+  redirect('/login');
+}

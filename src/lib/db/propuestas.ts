@@ -216,6 +216,20 @@ export interface PropuestaCompleta {
 }
 
 /**
+ * Las páginas de Fase 7 Paso 3 direccionan por `proyectoId` (la URL es
+ * `/tpm/proyectos/[proyectoId]`), no por `propuestaId` — un proyecto puede
+ * tener más de una propuesta (reanalizarProyecto crea una nueva cada vez,
+ * nunca pisa la anterior). Esta resuelve cuál mostrar: la más reciente.
+ */
+export async function obtenerUltimaPropuestaIdDeProyecto(db: Consultable, proyectoId: string): Promise<string | null> {
+  const { rows } = await db.query<{ id: string }>(
+    `SELECT id FROM propuestas WHERE proyecto_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [proyectoId]
+  );
+  return rows[0]?.id ?? null;
+}
+
+/**
  * Reconstruye una propuesta completa desde sus 7 tablas descendientes
  * (README §11). `tarifasAplicadas` viene de `propuesta_tarifas_aplicadas`,
  * nunca resuelto de nuevo contra `tarifas` — es la foto histórica, por eso
