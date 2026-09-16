@@ -14,7 +14,11 @@ export const metadata: Metadata = {
 export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
     <html lang="es">
-      <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">
+      {/* suppressHydrationWarning solo en <body>, no recursivo: extensiones del
+          navegador (gestores de contraseña, temas oscuros, Grammarly) suelen
+          inyectar atributos acá antes de que React hidrate — falso positivo
+          documentado en los docs de Next, no oculta mismatches reales del árbol. */}
+      <body className="min-h-screen bg-slate-950 text-slate-100 antialiased" suppressHydrationWarning>
         {children}
       </body>
     </html>

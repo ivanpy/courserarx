@@ -16,15 +16,29 @@ export function LoginForm() {
       </div>
 
       <div className="space-y-1.5">
-        <label htmlFor="passphrase" className="block text-sm font-medium text-slate-300">
-          Passphrase
+        <label htmlFor="email" className="block text-sm font-medium text-slate-300">
+          Email
+        </label>
+        <input
+          type="email"
+          id="email"
+          name="email"
+          required
+          autoFocus
+          autoComplete="username"
+          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none focus:border-slate-500"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label htmlFor="password" className="block text-sm font-medium text-slate-300">
+          Contraseña
         </label>
         <input
           type="password"
-          id="passphrase"
-          name="passphrase"
+          id="password"
+          name="password"
           required
-          autoFocus
           autoComplete="current-password"
           className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none focus:border-slate-500"
         />

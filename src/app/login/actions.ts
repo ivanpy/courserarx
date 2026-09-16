@@ -3,30 +3,36 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { timingSafeEqual } from '@/lib/auth/crypto';
+import { getPool } from '@/lib/db/client';
+import { obtenerUsuarioPorEmail } from '@/lib/db/usuarios';
+import { verifyPassword, DUMMY_PASSWORD_HASH } from '@/lib/auth/password';
 import { ADMIN_SESSION_COOKIE, createAdminSessionCookie } from '@/lib/auth/session';
 
 export interface LoginState {
   error: string | null;
 }
 
+/**
+ * Reemplaza el passphrase único de la Fase 5 por cuentas reales
+ * (`usuarios`, db/0002_usuarios.sql). Siempre se llama a `verifyPassword`
+ * — incluso cuando el email no existe, contra `DUMMY_PASSWORD_HASH` — para
+ * que el tiempo de respuesta no delate si un email está o no registrado.
+ */
 export async function loginAction(_prevState: LoginState, formData: FormData): Promise<LoginState> {
-  const passphrase = formData.get('passphrase');
-  if (typeof passphrase !== 'string' || passphrase.length === 0) {
-    return { error: 'Ingresá la passphrase.' };
+  const email = formData.get('email');
+  const password = formData.get('password');
+  if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
+    return { error: 'Ingresá tu email y tu contraseña.' };
   }
 
-  const adminPassphrase = process.env.ADMIN_PASSPHRASE;
-  if (!adminPassphrase) {
-    return { error: 'El servidor no tiene configurada la autenticación. Contactá al administrador.' };
+  const usuario = await obtenerUsuarioPorEmail(getPool(), email.trim().toLowerCase());
+  const esValida = await verifyPassword(password, usuario?.passwordHash ?? DUMMY_PASSWORD_HASH);
+
+  if (!usuario || !esValida) {
+    return { error: 'Email o contraseña incorrectos.' };
   }
 
-  const esValida = await timingSafeEqual(passphrase, adminPassphrase);
-  if (!esValida) {
-    return { error: 'Passphrase incorrecta.' };
-  }
-
-  const cookieValue = await createAdminSessionCookie();
+  const cookieValue = await createAdminSessionCookie({ id: usuario.id, email: usuario.email });
   const store = await cookies();
   store.set(ADMIN_SESSION_COOKIE, cookieValue, {
     httpOnly: true,

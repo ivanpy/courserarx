@@ -267,3 +267,30 @@ INSERT INTO roles_seniority_default (rol, seniority_default) VALUES
   ('Fullstack','Semi'), ('Frontend','Semi'), ('Backend','Semi'),
   ('DevOps','Senior'), ('QA','Junior'), ('UI/UX','Semi'), ('Otro','Semi');
 ```
+
+---
+
+## 9. Usuarios (`db/0002_usuarios.sql`)
+
+Reemplaza el passphrase único compartido (Fase 5, interino) por cuentas reales.
+
+```sql
+CREATE TABLE usuarios (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email         VARCHAR(255) NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  rol           VARCHAR(20) NOT NULL DEFAULT 'admin' CHECK (rol IN ('admin')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+`rol` acá es el rol de **sistema** del usuario (quién puede entrar a `/tpm`) — sin
+relación con el `rol` técnico de `tareas`/`tarifas` (Fullstack/Backend/etc., el perfil
+de una tarea del backlog). Dos dominios distintos a propósito, aunque compartan nombre
+de columna. Por ahora solo existe `'admin'`: la vista Stakeholder (Fase 8) es de
+enlace/token (`lib/auth/share-token.ts`), no de cuenta — no necesita fila acá.
+
+`password_hash` se genera y verifica con PBKDF2 sobre Web Crypto (`lib/auth/password.ts`),
+consistente con el resto de `lib/auth/*` (sin `node:crypto`). Se siembra con
+`npm run db:seed-admin -- <email> <password>`.

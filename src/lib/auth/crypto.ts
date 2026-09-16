@@ -9,7 +9,7 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-function toBase64Url(bytes: Uint8Array): string {
+export function toBase64Url(bytes: Uint8Array): string {
   let binary = '';
   bytes.forEach(b => {
     binary += String.fromCharCode(b);
@@ -17,7 +17,7 @@ function toBase64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function fromBase64Url(value: string): Uint8Array {
+export function fromBase64Url(value: string): Uint8Array {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
   const binary = atob(padded);
@@ -80,4 +80,20 @@ export async function hashHex(value: string): Promise<string> {
   return Array.from(bytes)
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+/**
+ * Secreto único del servidor para todo lo que firma con HMAC en `lib/auth/*`:
+ * `session.ts` lo usa para firmar `admin_session`, `share-token.ts` lo deriva
+ * (nunca lo usa crudo) para el token de enlace de Stakeholder. Reemplaza a
+ * `ADMIN_PASSPHRASE` (Fase 5): esa variable ya no es un passphrase de login
+ * — el login real compara contra `usuarios.password_hash` — así que un
+ * nombre que siga sugiriendo "la contraseña del admin" sería engañoso.
+ */
+export function getAuthSecret(): string {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) {
+    throw new Error('AUTH_SECRET no está configurada en el entorno del servidor.');
+  }
+  return secret;
 }

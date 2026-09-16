@@ -13,7 +13,8 @@
     "clean": "rm -rf dist .next server.js",
     "lint": "tsc --noEmit",
     "lint:boundary": "eslint src",
-    "db:migrate": "tsx db/migrate.ts"
+    "db:migrate": "tsx db/migrate.ts",
+    "db:seed-admin": "tsx db/seed-admin.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

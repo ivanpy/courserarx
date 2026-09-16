@@ -1,5 +1,5 @@
 import 'server-only';
-import { signPayload, verifyPayload, encodeBase64Url, decodeBase64Url } from './crypto';
+import { signPayload, verifyPayload, encodeBase64Url, decodeBase64Url, getAuthSecret } from './crypto';
 
 const SHARE_TOKEN_PURPOSE = 'share-token-v1';
 
@@ -15,21 +15,13 @@ export interface ShareTokenPayload {
   propuestaId: string;
 }
 
-function getAdminPassphrase(): string {
-  const passphrase = process.env.ADMIN_PASSPHRASE;
-  if (!passphrase) {
-    throw new Error('ADMIN_PASSPHRASE no está configurada en el entorno del servidor.');
-  }
-  return passphrase;
-}
-
 /**
- * Subclave derivada de ADMIN_PASSPHRASE por dominio de uso (HMAC como PRF), nunca la
- * passphrase cruda: un share-token filtrado no permite reconstruir la passphrase ni
- * forjar una `admin_session`, y viceversa. No requiere un secreto nuevo ni una tabla.
+ * Subclave derivada de AUTH_SECRET por dominio de uso (HMAC como PRF), nunca el
+ * secreto crudo: un share-token filtrado no permite forjar una `admin_session`,
+ * y viceversa. No requiere un secreto nuevo ni una tabla.
  */
 async function getShareTokenSecret(): Promise<string> {
-  return signPayload(SHARE_TOKEN_PURPOSE, getAdminPassphrase());
+  return signPayload(SHARE_TOKEN_PURPOSE, getAuthSecret());
 }
 
 export async function generateShareToken(propuestaId: string): Promise<string> {
